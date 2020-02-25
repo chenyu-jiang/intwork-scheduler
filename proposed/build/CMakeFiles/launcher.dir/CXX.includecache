@@ -1,0 +1,78 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/Users/chenyu/Documents/OneDrive - The Chinese University of Hong Kong/CUHK/Research/DL Systems/proposed_system/comm/common.h
+functional
+-
+memory
+-
+string
+-
+unordered_map
+-
+message.h
+/Users/chenyu/Documents/OneDrive - The Chinese University of Hong Kong/CUHK/Research/DL Systems/proposed_system/comm/message.h
+
+/Users/chenyu/Documents/OneDrive - The Chinese University of Hong Kong/CUHK/Research/DL Systems/proposed_system/comm/controller.cc
+controller.h
+/Users/chenyu/Documents/OneDrive - The Chinese University of Hong Kong/CUHK/Research/DL Systems/proposed_system/comm/controller.h
+atomic
+-
+map
+-
+queue
+-
+set
+-
+thread
+-
+chrono
+-
+unordered_set
+-
+
+/Users/chenyu/Documents/OneDrive - The Chinese University of Hong Kong/CUHK/Research/DL Systems/proposed_system/comm/controller.h
+iostream
+-
+queue
+-
+vector
+-
+thread
+-
+tensor_manager.h
+/Users/chenyu/Documents/OneDrive - The Chinese University of Hong Kong/CUHK/Research/DL Systems/proposed_system/comm/tensor_manager.h
+common.h
+/Users/chenyu/Documents/OneDrive - The Chinese University of Hong Kong/CUHK/Research/DL Systems/proposed_system/comm/common.h
+
+/Users/chenyu/Documents/OneDrive - The Chinese University of Hong Kong/CUHK/Research/DL Systems/proposed_system/comm/message.h
+string
+-
+vector
+-
+unordered_map
+-
+
+/Users/chenyu/Documents/OneDrive - The Chinese University of Hong Kong/CUHK/Research/DL Systems/proposed_system/comm/tensor_manager.cc
+tensor_manager.h
+/Users/chenyu/Documents/OneDrive - The Chinese University of Hong Kong/CUHK/Research/DL Systems/proposed_system/comm/tensor_manager.h
+assert.h
+-
+
+/Users/chenyu/Documents/OneDrive - The Chinese University of Hong Kong/CUHK/Research/DL Systems/proposed_system/comm/tensor_manager.h
+iostream
+-
+mutex
+-
+queue
+-
+common.h
+/Users/chenyu/Documents/OneDrive - The Chinese University of Hong Kong/CUHK/Research/DL Systems/proposed_system/comm/common.h
+message.h
+/Users/chenyu/Documents/OneDrive - The Chinese University of Hong Kong/CUHK/Research/DL Systems/proposed_system/comm/message.h
+

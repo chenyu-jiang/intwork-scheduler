@@ -1,0 +1,20 @@
+cmake_minimum_required(VERSION 3.10)
+
+project(DEBUG_PROPOSED)
+
+find_package(MPI REQUIRED)
+
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+add_library(proposed SHARED 
+c_api.cc
+common.cc
+controller.cc
+controller_mpi.cc
+message.cc
+tensor_manager.cc)
+
+
+include_directories(${MPI_INCLUDE_PATH})
+target_link_libraries(proposed ${MPI_CXX_LIBRARIES})

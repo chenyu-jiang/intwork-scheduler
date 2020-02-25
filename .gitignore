@@ -1,0 +1,9 @@
+# idea
+.idea/
+
+# vscode
+*.code-workspace
+.vscode/
+
+# macOS
+.DS_Store

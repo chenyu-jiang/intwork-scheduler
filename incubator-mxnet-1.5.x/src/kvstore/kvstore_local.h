@@ -139,7 +139,7 @@ class KVStoreLocal : public KVStore {
       // server assignment
       CHECK(server_assignment_dict_.find(key) == server_assignment_dict_.end())
             << "duplicate init of server assignment of key " << str_key;
-      server_assignment_dict_[key] = assigned_servers[i]
+      server_assignment_dict_[key] = assigned_servers[i];
     }
     InitImpl(keys, values);
   }

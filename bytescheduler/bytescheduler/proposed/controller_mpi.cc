@@ -1,4 +1,5 @@
 #include <iostream>
+#include <cassert>
 #include "controller_mpi.h"
 
 #define DEBUG_LOGGING true

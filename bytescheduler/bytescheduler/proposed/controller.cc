@@ -23,6 +23,7 @@
 #include <thread>
 #include <chrono>
 #include <unordered_set>
+#include <cassert>
 
 namespace proposed {
 namespace common {

@@ -457,6 +457,8 @@ class custom_build_ext(build_ext):
         if not os.path.exists("./proposed/build/libproposed.so"):
             raise DistutilsError(
                 "Failed to build proposed scheduler.")
+        else:
+            print('\n\nINFO: Proposed Scheduler is built successfully\n\n')
 
         if not built_plugins:
             raise DistutilsError(

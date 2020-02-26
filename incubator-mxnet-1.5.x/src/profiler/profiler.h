@@ -27,6 +27,7 @@
 
 #include <dmlc/concurrentqueue.h>
 #include <dmlc/thread_group.h>
+#include <mxnet/base.h>
 #include <vector>
 #include <string>
 #include <cstdint>

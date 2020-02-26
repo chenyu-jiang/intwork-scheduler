@@ -104,7 +104,7 @@ class KVStore {
    */
   virtual void Init(const std::vector<int>& keys,
                     const std::vector<NDArray>& values,
-                    const std::vectir<int>& assigned_servers) = 0;
+                    const std::vector<int>& assigned_servers) = 0;
 
   virtual void Init(const std::vector<int>& keys,
                     const std::vector<NDArray>& values) = 0;
@@ -115,7 +115,7 @@ class KVStore {
    */
   virtual void Init(const std::vector<std::string>& str_keys,
                     const std::vector<NDArray>& values,
-                    const std::vectir<int>& assigned_servers) = 0;
+                    const std::vector<int>& assigned_servers) = 0;
 
   virtual void Init(const std::vector<std::string>& str_keys,
                     const std::vector<NDArray>& values) = 0;

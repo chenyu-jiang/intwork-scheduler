@@ -122,7 +122,7 @@ class KVStoreLocal : public KVStore {
             const std::vector<NDArray>& values,
             const std::vector<int>& assigned_servers) override {
     SetKeyType(kStringKey);
-    SetServerAssignmentType(kSpecifiedAssignment)
+    SetServerAssignmentType(kSpecifiedAssignment);
     std::vector<int> keys(str_keys.size());
     for (size_t i = 0; i < str_keys.size(); ++i) {
       // key gen
@@ -147,7 +147,7 @@ class KVStoreLocal : public KVStore {
   void Init(const std::vector<std::string>& str_keys,
             const std::vector<NDArray>& values) override {
     SetKeyType(kStringKey);
-    SetServerAssignmentType(kRandomAssignment)
+    SetServerAssignmentType(kRandomAssignment);
     std::vector<int> keys(str_keys.size());
     for (size_t i = 0; i < str_keys.size(); ++i) {
       auto &str_key = str_keys[i];
@@ -315,6 +315,12 @@ class KVStoreLocal : public KVStore {
   void SetKeyType(const KeyType key_type) {
     if (key_type_ == kUndefinedKey) key_type_ = key_type;
     CHECK_EQ(key_type_, key_type) << "Mixed key types are not allowed";
+  }
+
+  void SetServerAssignmentType(const ServerAssignmentType asg_type) {
+    if (server_assignment_type_ == kUndefinedAssignment) 
+      server_assignment_type_ = asg_type;
+    CHECK_EQ(server_assignment_type_, asg_type) << "Mixed server assignment types are not allowed";
   }
 
   /**

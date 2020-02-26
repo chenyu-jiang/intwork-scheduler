@@ -892,7 +892,7 @@ int MXKVStoreInit(KVStoreHandle handle,
                   mx_uint num,
                   const int* keys,
                   NDArrayHandle* vals,
-                  const int* assigned_servers = NULL) {
+                  const int* assigned_servers /*= NULL*/) {
   API_BEGIN();
   std::vector<int> v_keys(num);
   std::vector<NDArray> v_vals(num);
@@ -914,7 +914,7 @@ int MXKVStoreInitEx(KVStoreHandle handle,
                   mx_uint num,
                   const char** keys,
                   NDArrayHandle* vals,
-                  const int* assigned_servers = NULL) {
+                  const int* assigned_servers /*= NULL*/) {
   API_BEGIN();
   std::vector<std::string> v_keys(num);
   std::vector<NDArray> v_vals(num);

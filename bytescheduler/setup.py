@@ -502,6 +502,7 @@ setup(
     ext_modules=[mxnet_lib, pytorch_lib],
     # $ setup.py publish support.
     cmdclass={
+        'install': custom_install,
         'upload': UploadCommand,
         'build_ext': custom_build_ext
     },

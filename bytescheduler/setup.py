@@ -480,7 +480,7 @@ setup(
     python_requires=REQUIRES_PYTHON,
     url=URL,
     packages=find_packages(exclude=('tests',)),
-    package_data = {"proposed": ["proposed/build/libproposed.so"]},
+    package_data = {"proposed": ["bytescheduler/proposed/build/libproposed.so"]},
     install_requires=REQUIRED,
     extras_require=EXTRAS,
     include_package_data=True,

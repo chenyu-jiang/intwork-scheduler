@@ -12,6 +12,7 @@ import textwrap
 
 from setuptools import find_packages, setup, Command, Extension
 from setuptools.command.build_ext import build_ext
+from setuptools.command.install import install as _install
 from distutils.errors import CompileError, DistutilsError, DistutilsPlatformError, LinkError
 import traceback
 import subprocess
@@ -420,6 +421,17 @@ def build_torch_extension(build_ext, options, torch_version):
         pytorch_lib.__dict__[k] = v
     build_ext.build_extension(pytorch_lib)
 
+class custom_install(_install):
+    def run(self):
+        # Build proposed scheduler
+        subprocess.check_call("bash install.sh", shell=True, cwd=os.path.join(os.path.dirname(os.path.realpath(__file__)), "bytescheduler/proposed"))
+        if not os.path.exists(os.path.join(os.path.dirname(os.path.realpath(__file__)), "bytescheduler/proposed/build/libproposed.so")):
+            raise DistutilsError(
+                "Failed to build proposed scheduler.")
+        else:
+            print('\n\nINFO: Proposed Scheduler is built successfully\n\n')
+        _install.run(self)
+
 
 # run the customize_compiler
 class custom_build_ext(build_ext):
@@ -451,14 +463,6 @@ class custom_build_ext(build_ext):
                     built_plugins.append(False)
                 else:
                     raise
-
-        # Build proposed scheduler
-        subprocess.check_call("bash install.sh", shell=True, cwd=os.path.join(os.path.dirname(os.path.realpath(__file__)), "bytescheduler/proposed"))
-        if not os.path.exists(os.path.join(os.path.dirname(os.path.realpath(__file__)), "bytescheduler/proposed/build/libproposed.so")):
-            raise DistutilsError(
-                "Failed to build proposed scheduler.")
-        else:
-            print('\n\nINFO: Proposed Scheduler is built successfully\n\n')
 
         if not built_plugins:
             raise DistutilsError(

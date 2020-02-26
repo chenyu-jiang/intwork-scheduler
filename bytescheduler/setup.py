@@ -453,7 +453,7 @@ class custom_build_ext(build_ext):
                     raise
 
         # Build proposed scheduler
-        subprocess.call("bash install.sh", cwd=os.path.join(os.path.dirname(os.path.realpath(__file__)), "bytescheduler/proposed"))
+        subprocess.check_call("bash install.sh", shell=True, cwd=os.path.join(os.path.dirname(os.path.realpath(__file__)), "bytescheduler/proposed"))
         if not os.path.exists(os.path.join(os.path.dirname(os.path.realpath(__file__)), "bytescheduler/proposed/build/libproposed.so")):
             raise DistutilsError(
                 "Failed to build proposed scheduler.")

@@ -67,7 +67,7 @@ enum ServerAssignmentType {
   kUndefinedAssignment = -1,
   kRandomAssignment, 
   kSpecifiedAssignment
-}
+};
 
 /**
  * \brief store data in local machine

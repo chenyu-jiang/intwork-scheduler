@@ -14,6 +14,7 @@ from setuptools import find_packages, setup, Command, Extension
 from setuptools.command.build_ext import build_ext
 from distutils.errors import CompileError, DistutilsError, DistutilsPlatformError, LinkError
 import traceback
+import subprocess
 
 
 # Manually add MXNet include path
@@ -451,6 +452,12 @@ class custom_build_ext(build_ext):
                 else:
                     raise
 
+        # Build proposed scheduler
+        subprocess.call("bash", "install.sh", cwd="./proposed/")
+        if not os.path.exists("./proposed/build/libproposed.so"):
+            raise DistutilsError(
+                "Failed to build proposed scheduler.")
+
         if not built_plugins:
             raise DistutilsError(
                 'MXNet, PyTorch plugins were excluded from build. Aborting.')
@@ -471,6 +478,7 @@ setup(
     python_requires=REQUIRES_PYTHON,
     url=URL,
     packages=find_packages(exclude=('tests',)),
+    package_data = {"proposed": "proposed/build/libproposed.so"},
     install_requires=REQUIRED,
     extras_require=EXTRAS,
     include_package_data=True,

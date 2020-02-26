@@ -40,11 +40,11 @@ if(MSVC)
   execute_process(COMMAND "${CMAKE_CURRENT_BINARY_DIR}/mklml/7z.exe"
                   "x" "${CMAKE_CURRENT_BINARY_DIR}/mklml/${MKL_NAME}.zip" "-o${CMAKE_CURRENT_BINARY_DIR}/mklml/" "-y")
 
-  set(MKLROOT "${CMAKE_CURRENT_BINARY_DIR}/mklml/${MKL_NAME}")
+  set(MKL_ROOT "${CMAKE_CURRENT_BINARY_DIR}/mklml/${MKL_NAME}")
 
-  message(STATUS "Setting MKLROOT path to ${MKLROOT}")
+  message(STATUS "Setting MKL_ROOT path to ${MKL_ROOT}")
 
-  include_directories(${MKLROOT}/include)
+  include_directories(${MKL_ROOT}/include)
 
 elseif(APPLE)
   set(MKL_NAME "mklml_mac_${MKLML_RELEASE_FILE_SUFFIX}")
@@ -55,10 +55,10 @@ elseif(APPLE)
   execute_process(COMMAND "tar" "-xzf" "${CMAKE_CURRENT_BINARY_DIR}/mklml/${MKL_NAME}.tgz"
                   "-C" "${CMAKE_CURRENT_BINARY_DIR}/mklml/")
 
-  set(MKLROOT "${CMAKE_CURRENT_BINARY_DIR}/mklml/${MKL_NAME}")
+  set(MKL_ROOT "${CMAKE_CURRENT_BINARY_DIR}/mklml/${MKL_NAME}")
 
-  message(STATUS "Setting MKLROOT path to ${MKLROOT}")
-  include_directories(${MKLROOT}/include)
+  message(STATUS "Setting MKL_ROOT path to ${MKL_ROOT}")
+  include_directories(${MKL_ROOT}/include)
 
 elseif(UNIX)
   set(MKL_NAME "mklml_lnx_${MKLML_RELEASE_FILE_SUFFIX}")
@@ -69,9 +69,9 @@ elseif(UNIX)
   execute_process(COMMAND "tar" "-xzf" "${CMAKE_CURRENT_BINARY_DIR}/mklml/${MKL_NAME}.tgz"
                   "-C" "${CMAKE_CURRENT_BINARY_DIR}/mklml/")
 
-  set(MKLROOT "${CMAKE_CURRENT_BINARY_DIR}/mklml/${MKL_NAME}")
-  message(STATUS "Setting MKLROOT path to ${MKLROOT}")
-  include_directories(${MKLROOT}/include)
+  set(MKL_ROOT "${CMAKE_CURRENT_BINARY_DIR}/mklml/${MKL_NAME}")
+  message(STATUS "Setting MKL_ROOT path to ${MKL_ROOT}")
+  include_directories(${MKL_ROOT}/include)
 
 else()
   message(FATAL_ERROR "Wrong platform")

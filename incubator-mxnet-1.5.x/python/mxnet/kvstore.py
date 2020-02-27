@@ -30,7 +30,7 @@ from .base import NDArrayHandle, KVStoreHandle
 from . import optimizer as opt
 from .profiler import set_kvstore_handle
 
-def _ctype_key_value(keys, vals, server_assigned):
+def _ctype_key_value(keys, vals, server_assigned = None):
     """
     Returns ctype arrays for the key-value args, and the whether string keys are used.
     For internal use only.

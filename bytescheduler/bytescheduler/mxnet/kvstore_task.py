@@ -51,8 +51,8 @@ class KVStoreTask(ByteTask):
             tensor: a list of tensor to be init/push/pull.
         """
         if self.op == "init":
-            if self.assigned_server:
-                self._comm.init(self.name, tensor, self.assigned_server)
+            if self._assigned_server:
+                self._comm.init(self.name, tensor, self._assigned_server)
             else:
                 self._comm.init(self.name, tensor)
         elif self.op == "push":

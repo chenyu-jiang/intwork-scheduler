@@ -15,7 +15,7 @@ class ByteTask(with_metaclass(ABCMeta)):
     def __init__(self, name, id, tensor, op, 
                  priority=0, comm=None, parent=None, max_partition=1000,
                  add_notify_finish_trigger=False, immediate=False, step=0, partition_index=-1, rank=0,
-                 logger=None, **kwargs):
+                 logger=None, assigned_server = None, **kwargs):
         """ByteTask initialization.
 
         Args:
@@ -83,6 +83,7 @@ class ByteTask(with_metaclass(ABCMeta)):
         self._partition_index = partition_index
         self._step = step
         self._rank = rank
+        self._assigned_server = assigned_server
 
         # Logger
         if logger is None:

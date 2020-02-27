@@ -75,7 +75,7 @@ def _ctype_key_value(keys, vals, server_assigned):
             assert(len(vals) == len(server_assigned)), "Assigned server length mismatch."
             c_servers = c_array_buf(ctypes.c_int, array("i", server_assigned))
         else:
-            c_servers = [None] * len(vals)
+            c_servers = None
         return (c_keys, c_handle_array(vals), c_servers, use_str_keys)
 
 def _ctype_dict(param_dict):

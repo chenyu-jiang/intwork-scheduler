@@ -287,7 +287,7 @@ class ByteTask(with_metaclass(ABCMeta)):
         proposed.post_tensor(self.id, cbs, self.priority)
 
     def register_end_callback(self, callback = None, callback_context=None):
-        self,end_callback = callback
+        self.end_callback = callback
         self.end_callback_context= callback_context
 
     def tensor_size(self):

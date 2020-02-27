@@ -67,12 +67,15 @@ def _ctype_key_value(keys, vals, server_assigned):
             c_servers = None
         return (c_keys, c_handle_array([vals]), c_servers, use_str_keys)
     else:
-        assert(len(vals) == len(server_assigned)), "Assigned server length mismatch."
         for value in vals:
             assert(isinstance(value, NDArray))
         c_keys = c_str_array([keys] * len(vals)) if use_str_keys \
                  else c_array_buf(ctypes.c_int, array('i', [keys] * len(vals)))
-        c_servers = c_array_buf(ctypes.c_int, array("i", server_assigned))
+        if server_assigned:
+            assert(len(vals) == len(server_assigned)), "Assigned server length mismatch."
+            c_servers = c_array_buf(ctypes.c_int, array("i", server_assigned))
+        else:
+            c_servers = [None] * len(vals)
         return (c_keys, c_handle_array(vals), c_servers, use_str_keys)
 
 def _ctype_dict(param_dict):

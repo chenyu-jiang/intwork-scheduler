@@ -36,23 +36,39 @@ def _ctype_key_value(keys, vals, server_assigned):
     For internal use only.
     """
     if isinstance(keys, (tuple, list)):
-        assert(len(keys) == len(vals) == len(server_assigned))
-        c_keys = []
-        c_vals = []
-        c_servers = []
-        use_str_keys = None
-        for key, val, server in zip(keys, vals, server_assigned):
-            c_key_i, c_val_i, c_servers_i, str_keys_i = _ctype_key_value(key, val, server)
-            c_keys += c_key_i
-            c_vals += c_val_i
-            c_servers += c_servers_i
-            use_str_keys = str_keys_i if use_str_keys is None else use_str_keys
-            assert(use_str_keys == str_keys_i), "inconsistent types of keys detected."
-        c_keys_arr = c_array(ctypes.c_char_p, c_keys) if use_str_keys \
-                     else c_array(ctypes.c_int, c_keys)
-        c_vals_arr = c_array(ctypes.c_void_p, c_vals)
-        c_servers_arr = c_array(ctypes.c_int, c_servers)
-        return (c_keys_arr, c_vals_arr, c_servers_arr, use_str_keys)
+        if server_assigned:
+            assert(len(keys) == len(vals) == len(server_assigned))
+            c_keys = []
+            c_vals = []
+            c_servers = []
+            use_str_keys = None
+            for key, val, server in zip(keys, vals, server_assigned):
+                c_key_i, c_val_i, c_servers_i, str_keys_i = _ctype_key_value(key, val, server)
+                c_keys += c_key_i
+                c_vals += c_val_i
+                c_servers += c_servers_i
+                use_str_keys = str_keys_i if use_str_keys is None else use_str_keys
+                assert(use_str_keys == str_keys_i), "inconsistent types of keys detected."
+            c_keys_arr = c_array(ctypes.c_char_p, c_keys) if use_str_keys \
+                        else c_array(ctypes.c_int, c_keys)
+            c_vals_arr = c_array(ctypes.c_void_p, c_vals)
+            c_servers_arr = c_array(ctypes.c_int, c_servers)
+            return (c_keys_arr, c_vals_arr, c_servers_arr, use_str_keys)
+        else:
+            c_keys = []
+            c_vals = []
+            use_str_keys = None
+            for key, val in zip(keys, vals):
+                c_key_i, c_val_i, _, str_keys_i = _ctype_key_value(key, val)
+                c_keys += c_key_i
+                c_vals += c_val_i
+                use_str_keys = str_keys_i if use_str_keys is None else use_str_keys
+                assert(use_str_keys == str_keys_i), "inconsistent types of keys detected."
+            c_keys_arr = c_array(ctypes.c_char_p, c_keys) if use_str_keys \
+                        else c_array(ctypes.c_int, c_keys)
+            c_vals_arr = c_array(ctypes.c_void_p, c_vals)
+            return (c_keys_arr, c_vals_arr, None, use_str_keys)
+
 
     assert(isinstance(keys, (int,) + string_types)), \
            "unexpected type for keys: " + str(type(keys))

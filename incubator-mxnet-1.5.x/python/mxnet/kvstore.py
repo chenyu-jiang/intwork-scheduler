@@ -257,7 +257,7 @@ class KVStore(object):
         >>> print b
         <RowSparseNDArray 2x3 @cpu(0)>
         """
-        ckeys, cvals, use_str_keys = _ctype_key_value(key, value)
+        ckeys, cvals, _, use_str_keys = _ctype_key_value(key, value)
         if use_str_keys:
             check_call(_LIB.MXKVStorePushEx(
                 self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
@@ -330,7 +330,7 @@ class KVStore(object):
         [ 2.  2.  2.]]
         """
         assert(out is not None)
-        ckeys, cvals, use_str_keys = _ctype_key_value(key, out)
+        ckeys, cvals, _, use_str_keys = _ctype_key_value(key, out)
         if use_str_keys:
             check_call(_LIB.MXKVStorePullWithSparseEx(self.handle, mx_uint(len(ckeys)), ckeys,
                                                       cvals, ctypes.c_int(priority),
@@ -404,8 +404,8 @@ class KVStore(object):
         if len(row_ids) == 1 and isinstance(out, list):
             single_rowid = True
             first_out = [out[0]]
-        ckeys, cvals, use_str_keys = _ctype_key_value(key, first_out)
-        _, crow_ids, _ = _ctype_key_value(key, row_ids)
+        ckeys, cvals, _, use_str_keys = _ctype_key_value(key, first_out)
+        _, crow_ids, _, _ = _ctype_key_value(key, row_ids)
         assert(len(crow_ids) == len(cvals)), \
                "the number of row_ids doesn't match the number of values"
         if use_str_keys:

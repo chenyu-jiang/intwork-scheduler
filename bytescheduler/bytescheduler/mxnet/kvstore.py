@@ -67,6 +67,7 @@ class ScheduledKVStore(mx.kvstore.KVStore):
             immediate=True,
             step=self._step,
             rank=self._rank,
+            key_index = self._str_key_int[key]
         )
         core.post(task)
 
@@ -99,6 +100,7 @@ class ScheduledKVStore(mx.kvstore.KVStore):
                 rank=self._rank,
                 logger=self._logger,
                 ignore_sparse=ignore_sparse,
+                key_index = self._str_key_int[key]
             )
             core.post(task)
         else:
@@ -118,6 +120,7 @@ class ScheduledKVStore(mx.kvstore.KVStore):
                 step=self._step,
                 rank=self._rank,
                 ignore_sparse=ignore_sparse,
+                key_index = self._str_key_int[key]
             )
             del self._push_buffer[key]
             core.post(task)

@@ -228,7 +228,7 @@ class KVWorker : public SimpleApp {
    */
   template <typename C, typename D>
   int Pull_(const SArray<Key>& keys, C* vals, D* lens,
-            int cmd, const Callback& cb, int priority= -100000000);
+            int cmd, const Callback& cb, int priority);
   /**
    * \brief add a callback for a request. threadsafe.
    * @param cb callback

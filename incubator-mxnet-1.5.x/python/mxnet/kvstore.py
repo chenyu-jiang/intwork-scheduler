@@ -58,10 +58,13 @@ def _ctype_key_value(keys, vals, server_assigned):
            "unexpected type for keys: " + str(type(keys))
     use_str_keys = isinstance(keys, string_types)
     if isinstance(vals, NDArray):
-        assert(isinstance(server_assigned, int)), "Assigned server length mismatch."
         c_keys = c_str_array([keys]) if use_str_keys \
-                 else c_array_buf(ctypes.c_int, array('i', [keys]))
-        c_servers = c_array_buf(ctypes.c_int, array("i", [server_assigned]))
+                else c_array_buf(ctypes.c_int, array('i', [keys]))
+        if server_assigned:
+            assert(isinstance(server_assigned, int)), "Assigned server must be an integer."
+            c_servers = c_array_buf(ctypes.c_int, array("i", [server_assigned]))
+        else:
+            c_servers = None
         return (c_keys, c_handle_array([vals]), c_servers, use_str_keys)
     else:
         assert(len(vals) == len(server_assigned)), "Assigned server length mismatch."
@@ -120,7 +123,7 @@ class KVStore(object):
     def __del__(self):
         check_call(_LIB.MXKVStoreFree(self.handle))
 
-    def init(self, key, value, server_assigned):
+    def init(self, key, value, server_assigned = None):
         """ Initializes a single or a sequence of key-value pairs into the store.
 
         For each key, one must `init` it before calling `push` or `pull`.

@@ -228,7 +228,7 @@ class KVWorker : public SimpleApp {
    */
   template <typename C, typename D>
   int Pull_(const SArray<Key>& keys, C* vals, D* lens,
-            int cmd, const Callback& cb, int priority);
+            int cmd, const Callback& cb, int priority= -100000000);
   /**
    * \brief add a callback for a request. threadsafe.
    * @param cb callback
@@ -550,7 +550,7 @@ void KVWorker<Val>::RunCallback(int timestamp) {
 template <typename Val>
 template <typename C, typename D>
 int KVWorker<Val>::Pull_(
-    const SArray<Key>& keys, C* vals, D* lens, int cmd, const Callback& cb, int priority = -100000000) {
+    const SArray<Key>& keys, C* vals, D* lens, int cmd, const Callback& cb, int priority) {
   int ts = obj_->NewRequest(kServerGroup);
   AddCallback(ts, [this, ts, keys, vals, lens, cb]() mutable {
       mu_.lock();

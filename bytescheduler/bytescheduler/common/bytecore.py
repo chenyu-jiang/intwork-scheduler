@@ -176,6 +176,8 @@ class ByteCore(object):
                 subtasks = task.partition(size=self._partition)
             else:
                 subtasks = [task]
+            
+            print("Tensor {} have {} partitions.".format(task.name, len(subtasks)))
 
             # A task will bypass scheduling and start immediately after partition if immediate is True.
             if task.is_immediate():

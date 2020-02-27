@@ -277,7 +277,7 @@ class ByteTask(with_metaclass(ABCMeta)):
             finish = True
             self.post_to_proposed()
 
-        self._done_count_lock.release()
+        self._ready_count_lock.release()
         return finish
 
     def post_to_proposed(self):

@@ -101,9 +101,9 @@ class KVStoreLocal : public KVStore {
             const std::vector<NDArray>& values,
             const std::vector<int>& assigned_servers) override {
     SetKeyType(kIntKey);
-    SetServerAssignmentType(kSpecifiedAssignment);
     for (size_t i = 0; i < keys.size(); ++i) {
       auto &key = keys[i];
+      SetServerAssignmentType(key, kSpecifiedAssignment);
       CHECK(server_assignment_dict_.find(key) == server_assignment_dict_.end())
             << "duplicate init of server assignment of key " << key;
       server_assignment_dict_[key] = assigned_servers[i];
@@ -114,7 +114,10 @@ class KVStoreLocal : public KVStore {
   void Init(const std::vector<int>& keys,
             const std::vector<NDArray>& values) override {
     SetKeyType(kIntKey);
-    SetServerAssignmentType(kRandomAssignment);
+    for (size_t i = 0; i < keys.size(); ++i) {
+      auto &key = keys[i];
+      SetServerAssignmentType(key, kRandomAssignment);
+    }
     InitImpl(keys, values);
   }
 
@@ -122,7 +125,6 @@ class KVStoreLocal : public KVStore {
             const std::vector<NDArray>& values,
             const std::vector<int>& assigned_servers) override {
     SetKeyType(kStringKey);
-    SetServerAssignmentType(kSpecifiedAssignment);
     std::vector<int> keys(str_keys.size());
     for (size_t i = 0; i < str_keys.size(); ++i) {
       // key gen
@@ -137,6 +139,7 @@ class KVStoreLocal : public KVStore {
       keys[i] = key;
 
       // server assignment
+      SetServerAssignmentType(key, kSpecifiedAssignment);
       CHECK(server_assignment_dict_.find(key) == server_assignment_dict_.end())
             << "duplicate init of server assignment of key " << str_key;
       server_assignment_dict_[key] = assigned_servers[i];
@@ -147,7 +150,6 @@ class KVStoreLocal : public KVStore {
   void Init(const std::vector<std::string>& str_keys,
             const std::vector<NDArray>& values) override {
     SetKeyType(kStringKey);
-    SetServerAssignmentType(kRandomAssignment);
     std::vector<int> keys(str_keys.size());
     for (size_t i = 0; i < str_keys.size(); ++i) {
       auto &str_key = str_keys[i];
@@ -158,6 +160,8 @@ class KVStoreLocal : public KVStore {
       // record reverse mapping from int to string
       reverse_str_key_dict_[key] = str_key;
       keys[i] = key;
+      // check assignment type
+      SetServerAssignmentType(key, kRandomAssignment);
     }
     InitImpl(keys, values);
   }
@@ -317,10 +321,10 @@ class KVStoreLocal : public KVStore {
     CHECK_EQ(key_type_, key_type) << "Mixed key types are not allowed";
   }
 
-  void SetServerAssignmentType(const ServerAssignmentType asg_type) {
-    if (server_assignment_type_ == kUndefinedAssignment) 
-      server_assignment_type_ = asg_type;
-    CHECK_EQ(server_assignment_type_, asg_type) << "Mixed server assignment types are not allowed";
+  void SetServerAssignmentType(const int& key, const ServerAssignmentType asg_type) {
+    if (server_assignment_type_dict_.find(key) == server_assignment_type_dict_.end())
+      server_assignment_type_dict_[key] = asg_type;
+    CHECK_EQ(server_assignment_type_dict_[key], asg_type) << "Mixed server assignment types for a single key is not allowed";
   }
 
   /**
@@ -511,7 +515,7 @@ class KVStoreLocal : public KVStore {
   /// whether int or string is used for keys
   KeyType key_type_ = kUndefinedKey;
   /// whether to use specified key to server mapping
-  ServerAssignmentType server_assignment_type_ = kUndefinedAssignment;
+  std::unordered_map<int, ServerAssignmentType> server_assignment_type_dict_;
 };
 }  // namespace kvstore
 }  // namespace mxnet

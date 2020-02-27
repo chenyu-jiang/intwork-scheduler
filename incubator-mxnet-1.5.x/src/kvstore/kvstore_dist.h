@@ -542,7 +542,7 @@ class KVStoreDist : public KVStoreLocal {
       const int num_servers = krs.size();
       CHECK_GT(num_servers, 0);
 
-      if (server_assignment_type_ == kSpecifiedAssignment) {
+      if (server_assignment_type_dict_[key] == kSpecifiedAssignment) {
         // send it to the specified server
         int server = server_assignment_dict_[key];
         ps::Key ps_key = krs[server].begin() + key;

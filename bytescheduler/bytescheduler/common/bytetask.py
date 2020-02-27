@@ -331,6 +331,7 @@ class ByteTask(with_metaclass(ABCMeta)):
             self.children.append(
                 self.__class__(
                     self.name + "_" + str(i),
+                    self.id,
                     tensor_partitions[i],
                     self.op,
                     priority=(self.priority + i),

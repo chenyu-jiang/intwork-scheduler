@@ -210,7 +210,7 @@ class ByteCore(object):
                 with self._pending_lock:
                     self._pending.add(t)
                 t.register_end_callback(callback=_end_callback, callback_context=self)
-                t.prepare(callback=_start_callback, callback_context=self)
+                t.prepare(start_callback=_start_callback, start_callback_context=self)
             return True
 
     def _tune(self):

@@ -59,7 +59,7 @@ class ByteCore(object):
         self._arch = None
 
         # Partition unit, i.e., the number of parameters
-        self._partition = int(os.environ.get('BYTESCHEDULER_PARTITION', 1000000))
+        self._partition = int(os.environ.get('BYTESCHEDULER_PARTITION', 100))
 
         # Credit, i.e., the max number of unacknowledged parameters
         self._credit = float(os.environ.get('BYTESCHEDULER_CREDIT', 4000000))

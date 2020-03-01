@@ -13,3 +13,6 @@
 
 # profile
 *server_profile.json
+
+# zip
+*.zip

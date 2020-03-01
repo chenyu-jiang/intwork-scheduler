@@ -33,12 +33,19 @@ class ProposedWrapper(object):
             return -1
         return self.COMM_CTYPES.proposed_get_world_size()
     
-    def post_tensor(self, tensor_id, finish_cbs, priority):
+    def post_tensor(self, tensor_id, finish_cbs, priority, assigned_server = -1):
         if not self._inited:
             raise RuntimeError("Must call init() before posting tensor to proposed scheduler.")
         num_partitions = len(finish_cbs)
         CB_ARRAY_TYPE = ctypes.CFUNCTYPE(None) * num_partitions
         cbs = []
+        
+        if num_partitions == 1:
+            # small tensor, must specify assigned_server
+            if(assigned_server == -1):
+                raise RuntimeError("Must specify assigned server for small tensors.")
+            if(assigned_server >= self.get_world_size()):
+                raise RuntimeError("Specified assigned server larger than world size.")
 
         for pid in range(num_partitions):
             finish_cb = finish_cbs[pid]
@@ -51,7 +58,8 @@ class ProposedWrapper(object):
             ctypes.c_int32(tensor_id),
             ctypes.c_int32(num_partitions),
             CB_ARRAY_TYPE(*cbs),
-            ctypes.c_int32(priority)
+            ctypes.c_int32(priority),
+            ctypes.c_int32(assigned_server)
             )
 
         if status != 0:

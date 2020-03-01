@@ -21,6 +21,7 @@
 #include <queue>
 #include <vector>
 #include <thread>
+#include <unordered_set>
 #include "tensor_manager.h"
 #include "common.h"
 
@@ -29,7 +30,7 @@ namespace common {
 
 class TensorPackElement {
 public:
-  TensorPackElement();
+  TensorPackElement() {};
 
   TensorPackElement(int32_t rank, int32_t tensor_id, int32_t partition_id): 
     rank(rank), tensor_id(tensor_id), partition_id(partition_id) {}
@@ -46,9 +47,9 @@ public:
             ", p: " + std::to_string(partition_id) + "; ";
   }
 
-  int32_t rank = 0;
-  int32_t tensor_id = 0;
-  int32_t partition_id = 0;
+  int32_t rank = -1;
+  int32_t tensor_id = -1;
+  int32_t partition_id = -1;
 };
 
 using PackExecutionCallback = std::function<void()>;
@@ -88,6 +89,51 @@ private:
   std::vector<std::vector<TensorPackElement>> tensors_;
 };
 
+class SmallTensorPack {
+public:
+  struct compare_tp {
+    bool operator()(const SmallTensorPack& l, const SmallTensorPack& r) {
+      return l.priority > r.priority;
+    }
+  };
+
+  SmallTensorPack() {};
+
+  SmallTensorPack(const std::vector<TensorPackElement>& tensors, 
+            int32_t tensor_priority, PackExecutionCallback callback, int32_t assigned_server):
+              tensors_(tensors), 
+              num_workers_(tensors.size()), 
+              priority(tensor_priority), 
+              cb(callback),
+              assigned_server_(assigned_server) {}
+
+  void SetFirstWorker(int32_t worker_id);
+
+  int32_t get_first_worker() const {return worker_offset_;}
+
+  const TensorPackElement YieldTensorPackElements();
+
+  int32_t get_tensor_id() const {return tensors_[0].tensor_id;}
+
+  int32_t get_assigned_server() const {return assigned_server_;}
+
+  void on_finish() {cb();}
+
+  std::string to_string() const;
+
+  int32_t priority;
+
+protected:
+  int32_t num_workers_ = 0;
+  int32_t current_step_ = 0;
+  int32_t worker_offset_ = 0;
+  int32_t assigned_server_ = -1;
+  PackExecutionCallback cb;
+
+private:
+  std::vector<TensorPackElement> tensors_;
+};
+
 class PackExecutor {
 public:
   PackExecutor(TensorManager& tensor_manager): 
@@ -95,14 +141,14 @@ public:
 
   Status SignalPushFinished();
 
-  std::vector<Response> 
-    ConstructResponse(const std::vector<TensorPackElement>& tensors) const;
-
   void Post(TensorPack pack);
 
   bool IsExecuting() const {return executing_;}
 
 private:
+  std::vector<Response> 
+    ConstructResponse_(const std::vector<TensorPackElement>& tensors) const;
+
   bool ExecutePackInQueue_();
 
   std::priority_queue<TensorPack, std::deque<TensorPack>, TensorPack::compare_tp> 
@@ -113,9 +159,41 @@ private:
   TensorManager& tensor_manager_;
 };
 
+class SmallTensorExecutor {
+public:
+  SmallTensorExecutor(TensorManager& tensor_manager):
+                        tensor_manager_(tensor_manager) {}
+
+  void Finalize();
+
+  Status SignalPushFinished(int32_t tensor_id);
+
+  void Post(SmallTensorPack pack);
+
+private:
+  Response
+  ConstructResponse_(const TensorPackElement& tensor) const;
+
+  bool ExecutePackInQueue_();
+
+  inline void CheckFinalized();
+
+  int32_t world_size_ = 0;
+  
+  std::priority_queue<SmallTensorPack, std::deque<SmallTensorPack>, SmallTensorPack::compare_tp> 
+    tp_queue_;
+  
+  std::vector<SmallTensorPack> executing_tps_;
+  std::unordered_set<int32_t> idle_servers;
+  std::unordered_map<int32_t, int32_t> tensor_id_to_server_dict_;
+  TensorManager& tensor_manager_;
+  bool finalized_ = false;
+};
+
 class Controller {
 public:
-  Controller(): pack_executor_(tensor_manager_) {}
+  Controller(): pack_executor_(tensor_manager_), 
+                small_tensor_executor_(tensor_manager_) {}
 
   Controller(const Controller&) = delete;
   // Functions must be overridden by concrete controller
@@ -129,7 +207,7 @@ public:
 
   // Interface to bytecore
 
-  void PostTensor(std::vector<Tensor>& tensors, int32_t priority);
+  void PostTensor(std::vector<Tensor>& tensors, int32_t priority, int32_t assigned_server = -1);
 
   void SignalPartitionFinished(int32_t tensor_id, int32_t partition_id);
 
@@ -199,9 +277,13 @@ protected:
 
   std::unordered_map<int32_t, std::vector<TensorPack>> tp_table_;
 
+  std::unordered_map<int32_t, SmallTensorPack> stp_table_;
+
   std::unordered_map<int32_t, int32_t> tp_count_table_;
 
   PackExecutor pack_executor_;
+
+  SmallTensorExecutor small_tensor_executor_;
 
 };
 

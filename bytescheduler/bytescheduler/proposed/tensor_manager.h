@@ -40,11 +40,19 @@ public:
 
   void SetWorldSize(int32_t value) {world_size_ = value;}
 
+  bool IsFinalized() {return finalized_;} 
+
+  int32_t GetWorldSize() {return world_size_;}
+
+  int32_t GetRank() {return rank_;}
+
   int32_t GetNumPartitions(int32_t tensor_id);
 
   int32_t GetPriority(int32_t tensor_id);
 
-  void PostTensor(std::vector<Tensor>& t, int32_t priority);
+  void PostTensor(std::vector<Tensor>& t, int32_t priority, int32_t assigned_server = -1);
+
+  int32_t GetAssignedServer(int32_t tensor_id) const;
 
   void DeleteTensorWithID(int32_t tensor_id);
 
@@ -63,7 +71,7 @@ public:
 
   void AddRequestToList(Request& message);
 
-  void AddResponseToList(Response& message, int32_t rank);
+  void AddResponseToList(Response& message);
 
 protected:
   void CheckFinalized() {
@@ -78,6 +86,8 @@ protected:
   int32_t world_size_ = 0;
 
   TensorTable tensor_table_;
+
+  std::unordered_map<int32_t, int32_t> assigned_server_dict_;
 
   // Queue of requests waiting to be sent to the coordinator node.
   RequestList request_list_;

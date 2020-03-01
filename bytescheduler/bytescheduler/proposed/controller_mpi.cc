@@ -23,6 +23,7 @@ void MPIController::Initialize() {
   Log("MPI initialized. World size: " + std::to_string(world_size_));
   inited_ = true;
   tensor_manager_.Finalize();
+  small_tensor_executor_.Finalize();
 }
 
 std::vector<Request> MPIController::RecvRequests_() {

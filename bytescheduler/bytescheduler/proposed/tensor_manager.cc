@@ -33,7 +33,7 @@ void TensorManager::Finalize() {
   finalized_ = true;
 }
 
-void TensorManager::PostTensor(std::vector<Tensor>& tensors, int32_t priority) {
+void TensorManager::PostTensor(std::vector<Tensor>& tensors, int32_t priority, int32_t assigned_server) {
   std::lock_guard<std::mutex> guard(mutex_);
   CheckFinalized();
   // Add tensor into the tensor table
@@ -45,14 +45,30 @@ void TensorManager::PostTensor(std::vector<Tensor>& tensors, int32_t priority) {
 
   tensor_table_.emplace(tensor_id, 
                         TensorTableElement(tensors, tensor_id, priority));
+  
+  // Check if is small tensor
+  if(tensors.size() == 1) {
+    // small tensor, register assigned_server
+    if(assigned_server == -1) 
+      throw std::runtime_error("Assigned server not specified for small tensor.");
+    assigned_server_dict_[tensor_id] = assigned_server;
+  }
 
   // formulate a layer ready request and push it into the queue
   request_list_.emplace_request(
     Request(rank_, Request::TENSOR_READY, tensor_id, -1));
 }
 
+int32_t TensorManager::GetAssignedServer(int32_t tensor_id) const {
+  if(assigned_server_dict_.find(tensor_id) == assigned_server_dict_.end())
+    return -1;
+  return assigned_server_dict_.at(tensor_id);
+}
+
 void TensorManager::DeleteTensorWithID(int32_t tensor_id) {
   tensor_table_.erase(tensor_id);
+  if(assigned_server_dict_.find(tensor_id) != assigned_server_dict_.end())
+    assigned_server_dict_.erase(tensor_id);
 }
 
 void 
@@ -137,9 +153,9 @@ void TensorManager::AddRequestToList(Request& message) {
 }
 
 // Push a response to response list
-void TensorManager::AddResponseToList(Response& message, int32_t rank) {
+void TensorManager::AddResponseToList(Response& message) {
   std::lock_guard<std::mutex> guard(mutex_);
-  response_list_[rank].emplace_response(std::move(message));
+  response_list_[message.rank()].emplace_response(std::move(message));
 }
 
 

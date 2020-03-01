@@ -7,13 +7,14 @@ find_package(MPI REQUIRED)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-add_library(proposed SHARED 
+add_executable(proposed 
 c_api.cc
 common.cc
 controller.cc
 controller_mpi.cc
 message.cc
-tensor_manager.cc)
+tensor_manager.cc
+debug_launcher.cc)
 
 
 include_directories(${MPI_INCLUDE_PATH})

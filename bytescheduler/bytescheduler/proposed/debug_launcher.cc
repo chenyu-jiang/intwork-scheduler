@@ -58,8 +58,12 @@ int main() {
     SafeQueue<SafeQueueElement> queue;
     std::vector<std::vector<Tensor>> tensors;
 
+    std::vector<std::vector<Tensor>> small_tensors;
+
     int32_t layer_num = 5;
     int32_t partition_per_layer = 16;
+
+    int32_t small_tensor_per_layer = 4;
 
     for(int i=0;i<layer_num;i++) {
       std::vector<Tensor> ts;
@@ -70,24 +74,42 @@ int main() {
                   queue.enqueue(SafeQueueElement(i, p));
                   }));
       tensors.emplace_back(std::move(ts));
+
+      for(int j=0;j<small_tensor_per_layer;j++) {
+        std::vector<Tensor> sts;
+        sts.emplace_back(Tensor((i+1)*1000+j, 0, 
+              [&queue, i, j](){
+                  queue.enqueue(SafeQueueElement((i+1)*1000+j, 0));
+                  }));
+        small_tensors.emplace_back(std::move(sts));
+      }
     }
+
     MPIController controller;
     controller.Initialize();
 
     for(int layer_id = layer_num-1; layer_id >= 0; layer_id--) {
       controller.PostTensor(tensors[layer_id], layer_id);
+      for(int j=0;j<small_tensor_per_layer;j++) {
+        // std::cout<<"posting "+std::to_string(small_tensors[layer_id*small_tensor_per_layer+j][0].tensor_id) << std::endl;
+        controller.PostTensor(small_tensors[layer_id*small_tensor_per_layer+j], layer_id, 0);
+      }
     }
 
     int32_t my_rank = controller.get_rank();
 
     controller.LaunchBackGroundThread();
+    std::cout << "BG Thread Launched." << std::endl;
 
-    for(int i=0;i<layer_num* partition_per_layer; i++) {
+    for(int i=0;i<layer_num* (partition_per_layer + small_tensor_per_layer); i++) {
       SafeQueueElement e = queue.dequeue();
-      std::stringstream stream;
-      stream << "[rank " << my_rank << "] Layer " << e.layer_id << " Partition " << e.partition_id << " finished." << std::endl;
-      std::cout << stream.str();
+      if (e.layer_id >= 1000) {
+        std::stringstream stream;
+        stream << "[rank " << my_rank << "] Layer " << e.layer_id << " Partition " << e.partition_id << " finished." << std::endl;
+        std::cout << stream.str();
+      }
       controller.SignalPartitionFinished(e.layer_id, e.partition_id);
     }
+    MPI_Finalize();
     return 0;
 }

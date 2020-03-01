@@ -47,14 +47,25 @@ void Controller::ProcessRequests_(const std::vector<Request>& recvd_requests){
       // Received tensor ready message
       bool all_ready = IncrementTensorCount_(req);
       if(all_ready) {
-        // Push copies of tensorpack of this tensor into executor
-        for(auto tp: tp_table_.at(req.tensor_id())) {
-          pack_executor_.Post(tp);
+        if (stp_table_.find(req.tensor_id()) != stp_table_.end()) {
+          // is small tensor
+          small_tensor_executor_.Post(stp_table_.at(req.tensor_id()));
+        } else {
+          // Not a small tensor
+          // Push copies of tensorpack of this tensor into executor
+          for(auto tp: tp_table_.at(req.tensor_id())) {
+            pack_executor_.Post(tp);
+          }
         }
       }
     } else {
       // Received partition finished message
-      pack_executor_.SignalPushFinished();
+      if(stp_table_.find(req.tensor_id()) != stp_table_.end()) {
+        // is small tensor
+        small_tensor_executor_.SignalPushFinished(req.tensor_id());
+      } else {
+        pack_executor_.SignalPushFinished();
+      }
       if(tp_count_table_[req.tensor_id()] == 0) {
         // entire tensor execution finished
         DeleteFromTPTable(req.tensor_id());
@@ -77,33 +88,53 @@ Controller::ProcessResponses_(const std::vector<Response>& recvd_responses) {
 
 void Controller::ConstructTensorPacks_(int32_t tensor_id) {
   int32_t num_partitions = tensor_manager_.GetNumPartitions(tensor_id);
-  // sanity check
-  assert(num_partitions % world_size_ == 0);
-
-  int32_t priority = tensor_manager_.GetPriority(tensor_id);
-  int32_t num_packs = num_partitions / world_size_;
-
-  for(int32_t pack_id=0; pack_id < num_packs; pack_id++) {
-    std::vector<std::vector<TensorPackElement>> pack;
-    for(int32_t step_id=0; step_id < world_size_; step_id++) {
-      std::vector<TensorPackElement> step_elements;
-      for(int32_t worker_id=0; worker_id<world_size_; worker_id++) {
-        int32_t current_partition_id = 
-          pack_id*world_size_+ ((step_id+worker_id) % world_size_);
-        step_elements.emplace_back(
-          TensorPackElement(worker_id, tensor_id, current_partition_id));
-      }
-      pack.emplace_back(std::move(step_elements));
+  
+  if(num_partitions == 1) {
+    // Small tensor
+    int32_t priority = tensor_manager_.GetPriority(tensor_id);
+    int32_t assigned_server = tensor_manager_.GetAssignedServer(tensor_id);
+    if(assigned_server == -1)
+      throw std::runtime_error("Unregistered assigned server for small tensor in tensor_manager.");
+    std::vector<TensorPackElement> spack;
+    for(int32_t worker_id = 0; worker_id < world_size_; worker_id++) {
+      spack.emplace_back(TensorPackElement(worker_id, tensor_id, 0));
     }
-    tp_table_[tensor_id].emplace_back(
-      TensorPack(pack, priority, 
-                [this, tensor_id]{this->tp_count_table_[tensor_id] --;} ));
+    stp_table_[tensor_id] = 
+      SmallTensorPack(spack, priority, [this, tensor_id]{this->tp_count_table_[tensor_id] --;}, assigned_server);
+    tp_count_table_[tensor_id] = 1;
+  } else {
+    // sanity check
+    assert(num_partitions % world_size_ == 0);
+
+    int32_t priority = tensor_manager_.GetPriority(tensor_id);
+    int32_t num_packs = num_partitions / world_size_;
+
+    for(int32_t pack_id=0; pack_id < num_packs; pack_id++) {
+      std::vector<std::vector<TensorPackElement>> pack;
+      for(int32_t step_id=0; step_id < world_size_; step_id++) {
+        std::vector<TensorPackElement> step_elements;
+        for(int32_t worker_id=0; worker_id<world_size_; worker_id++) {
+          int32_t current_partition_id = 
+            pack_id*world_size_+ ((step_id+worker_id) % world_size_);
+          step_elements.emplace_back(
+            TensorPackElement(worker_id, tensor_id, current_partition_id));
+        }
+        pack.emplace_back(std::move(step_elements));
+      }
+      tp_table_[tensor_id].emplace_back(
+        TensorPack(pack, priority, 
+                  [this, tensor_id]{this->tp_count_table_[tensor_id] --;} ));
+    }
+    tp_count_table_[tensor_id] = num_packs;
   }
-  tp_count_table_[tensor_id] = num_packs;
 }
 
 void Controller::DeleteFromTPTable(int32_t tensor_id) {
-  tp_table_.erase(tensor_id);
+  if(stp_table_.find(tensor_id) != stp_table_.end()) {
+    stp_table_.erase(tensor_id);
+  } else {
+    tp_table_.erase(tensor_id);
+  }
   tp_count_table_.erase(tensor_id);
 }
 
@@ -141,8 +172,8 @@ void Controller::RunMainLoop_() {
   }
 }
 
-void Controller::PostTensor(std::vector<Tensor>& tensors, int32_t priority) {
-  tensor_manager_.PostTensor(tensors, priority);
+void Controller::PostTensor(std::vector<Tensor>& tensors, int32_t priority, int32_t assigned_server) {
+  tensor_manager_.PostTensor(tensors, priority, assigned_server);
   if (is_coordinator_) ConstructTensorPacks_(tensors[0].tensor_id);
 }
 
@@ -185,6 +216,30 @@ std::string TensorPack::to_string() const {
   return out;
 }
 
+// SmallTensorPack =============================================================
+
+void SmallTensorPack::SetFirstWorker(int32_t worker_id) {
+  if(worker_id >= num_workers_) throw std::runtime_error("Worker id does not exist.");
+  worker_offset_ = worker_id;
+}
+
+const TensorPackElement SmallTensorPack::YieldTensorPackElements() {
+    if (current_step_ >= num_workers_) {
+      return TensorPackElement();
+    }
+    current_step_ ++;
+    return tensors_[(current_step_ + worker_offset_ - 1) % num_workers_];
+}
+
+std::string SmallTensorPack::to_string() const {
+  std::string out = "";
+  for(const auto& element_vec: tensors_) {
+    out += "\n";
+    out += element_vec.to_string();
+  }
+  return out;
+}
+
 // PackExecutor ================================================================
 
 Status PackExecutor::SignalPushFinished() {
@@ -199,9 +254,9 @@ Status PackExecutor::SignalPushFinished() {
       executing_tp_.YieldTensorPackElements();
     if(! next_tensors.empty()) {
       // There's more partitions to send
-      std::vector<Response> responses = ConstructResponse(next_tensors);
+      std::vector<Response> responses = ConstructResponse_(next_tensors);
       for(auto& res: responses) {
-        tensor_manager_.AddResponseToList(res, res.rank());
+        tensor_manager_.AddResponseToList(res);
       }
     } else {
       // TP execution complete
@@ -221,16 +276,16 @@ bool PackExecutor::ExecutePackInQueue_() {
     executing_ = true;
     tp_queue_.pop();
     std::vector<Response> responses = 
-      ConstructResponse(executing_tp_.YieldTensorPackElements());
+      ConstructResponse_(executing_tp_.YieldTensorPackElements());
     for(auto& res: responses) {
-      tensor_manager_.AddResponseToList(res, res.rank());
+      tensor_manager_.AddResponseToList(res);
     }
     return true;
   } else return false;
 }
 
 std::vector<Response> 
-PackExecutor::ConstructResponse(const std::vector<TensorPackElement>& tensors) 
+PackExecutor::ConstructResponse_(const std::vector<TensorPackElement>& tensors) 
 const {
   std::vector<Response> res;
   for(auto& t: tensors) {
@@ -241,6 +296,101 @@ const {
 }
 
 void PackExecutor::Post(TensorPack pack) {
+  tp_queue_.emplace(std::move(pack));
+  ExecutePackInQueue_();
+}
+
+
+// SmallTensorExecutor =========================================================
+
+void SmallTensorExecutor::Finalize() {
+  if(! tensor_manager_.IsFinalized()) 
+    throw std::runtime_error("Must finalize tensor manager before initializing SmallTensorExecutor.");
+  world_size_ = tensor_manager_.GetWorldSize();
+  executing_tps_.resize(world_size_);
+
+  for(int i=0; i<world_size_;i++) {
+    idle_servers.insert(i);
+  }
+  finalized_ = true;
+}
+
+inline void SmallTensorExecutor::CheckFinalized() {
+  if(! finalized_) throw std::runtime_error("Must finalize SmallTensorExecutor before use.");
+}
+
+Status SmallTensorExecutor::SignalPushFinished(int32_t tensor_id) {
+  CheckFinalized();
+  if(tensor_id_to_server_dict_.find(tensor_id) == tensor_id_to_server_dict_.end())
+    throw std::runtime_error(
+      "PushFinished signal received while tensor is not executing.");
+    
+  int32_t assigned_server = tensor_id_to_server_dict_[tensor_id];
+
+  TensorPackElement next_tensor = 
+    executing_tps_[assigned_server].YieldTensorPackElements();
+  if(next_tensor.rank != -1) {
+    // There's more partitions to send
+    Response response = ConstructResponse_(next_tensor);
+    tensor_manager_.AddResponseToList(response);
+  } else {
+    // TP execution complete
+    idle_servers.insert(assigned_server);
+    executing_tps_[assigned_server].on_finish();
+    ExecutePackInQueue_();
+  }
+  return Status::OK();
+}
+
+bool SmallTensorExecutor::ExecutePackInQueue_() {
+  if (idle_servers.empty()) return false;
+
+  if(! tp_queue_.empty()) {
+    bool executed_stp = false;
+    std::vector<SmallTensorPack> tmp_q;
+    while(!tp_queue_.empty()) {
+      const SmallTensorPack& stp = tp_queue_.top();
+      int32_t assigned_server = stp.get_assigned_server();
+      if(idle_servers.find(assigned_server) == idle_servers.end()) {
+        tmp_q.push_back(stp);
+        tp_queue_.pop();
+      } else {
+        // got a tensor that matches an empty position
+        executing_tps_[assigned_server] = stp;
+        idle_servers.erase(assigned_server);
+        tensor_id_to_server_dict_[stp.get_tensor_id()] = assigned_server;
+        // assign worker offset
+        executing_tps_[assigned_server].SetFirstWorker(assigned_server);
+
+        tp_queue_.pop();
+        Response res = 
+          ConstructResponse_(
+            executing_tps_[assigned_server].YieldTensorPackElements()
+            );
+        tensor_manager_.AddResponseToList(res);
+        executed_stp = true;
+        break;
+      }
+    }
+    for(auto& stp: tmp_q) {
+      tp_queue_.push(stp);
+    }
+    if (executed_stp) {
+      ExecutePackInQueue_();
+      return true;
+    } else return false;
+  } else return false;
+}
+
+Response
+SmallTensorExecutor::ConstructResponse_(const TensorPackElement& t) 
+const {
+  return Response(Response::RELEASE, t.rank, 
+                      t.tensor_id, t.partition_id);
+}
+
+void SmallTensorExecutor::Post(SmallTensorPack pack) {
+  CheckFinalized();
   tp_queue_.emplace(std::move(pack));
   ExecutePackInQueue_();
 }

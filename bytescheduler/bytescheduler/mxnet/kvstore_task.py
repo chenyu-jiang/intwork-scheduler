@@ -52,7 +52,10 @@ class KVStoreTask(ByteTask):
         """
         if self.op == "init":
             if self._assigned_server:
-                self._comm.init(self.name, tensor, self._assigned_server)
+                if isinstance(tensor, (tuple, list)):
+                    self._comm.init(self.name, tensor, [self._assigned_server]*len(tensor))
+                else:
+                    self._comm.init(self.name, tensor, self._assigned_server)
             else:
                 self._comm.init(self.name, tensor)
         elif self.op == "push":

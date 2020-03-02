@@ -1,7 +1,7 @@
 from .proposed import ProposedWrapper as _ProposedWrapper
 import os
 
-_suffix = "build/libproposed.dylib"
+_suffix = "build/libproposed.so"
 
 _wrapper = _ProposedWrapper(os.path.join(os.path.dirname(__file__), _suffix))
 

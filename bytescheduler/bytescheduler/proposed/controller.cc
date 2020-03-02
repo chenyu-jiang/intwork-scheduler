@@ -82,6 +82,7 @@ Controller::ProcessResponses_(const std::vector<Response>& recvd_responses) {
       throw std::runtime_error("Response of type ERROR received.");
     }
     // response of type release, call the tensor manager
+    Log("Releasing tensor i:"+std::to_string(res.tensor_id())+", p:"+std::to_string(res.partition_id())+".")
     tensor_manager_.ReleaseTensor(res.tensor_id(), res.partition_id());
   }
 }

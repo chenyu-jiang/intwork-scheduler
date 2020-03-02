@@ -61,7 +61,7 @@ class ByteCore(object):
         self._arch = None
 
         # Partition unit, i.e., the number of parameters
-        self._partition = int(os.environ.get('BYTESCHEDULER_PARTITION', 10000))
+        self._partition = int(os.environ.get('BYTESCHEDULER_PARTITION', 100000))
 
         # Credit, i.e., the max number of unacknowledged parameters
         self._credit = float(os.environ.get('BYTESCHEDULER_CREDIT', 4000000))
@@ -125,7 +125,6 @@ class ByteCore(object):
             self._credit = sys.maxint
             self._condition.notify_all()
         self._is_started = False
-        self._tuner.exit()
         self._profiler.stop()
         self._logger.info("shutdown Core {}.".format(self._rank))
 
@@ -150,8 +149,6 @@ class ByteCore(object):
                 self._first_key = task.name
             if self._first_key == task.name:
                 self._step += 1
-                if self._tuner:
-                    self._tune()
 
             # Partition a task if its tensor is larger than a threshold.
             if task.tensor_size() > self._partition:
@@ -160,15 +157,17 @@ class ByteCore(object):
                 task.set_assigned_server(get_random_server(task.id))
                 subtasks = [task]
             
-            print("Tensor {} have {} partitions.".format(task.name, len(subtasks)))
+            # print("Tensor {} have {} partitions.".format(task.name, len(subtasks)))
 
             # A task will bypass scheduling and start immediately after partition if immediate is True.
             if task.is_immediate():
+                print("[{}] Running immediate task {} with op {}.".format(proposed.get_rank(), task.name, task.op))
                 # The callback runs after an immediate task is finished.
                 def _end_callback(t, self):
                     with self._condition:
                         self._running.remove(t)
                         self._finished[t.name] = t
+                    # print("[{}] Immediate task {} with op {} finished.".format(proposed.get_rank(), task.name, task.op))
                     self._profiler.put(t.name, t.op + 'COMMUNICATION', 'E')
 
                 for t in subtasks:

@@ -34,6 +34,7 @@ class ProposedWrapper(object):
         return self.COMM_CTYPES.proposed_get_world_size()
     
     def post_tensor(self, tensor_id, finish_cbs, priority, assigned_server = -1):
+        print("[{}] post_tensor is called with tensor_id {}.".format(self.get_rank(), tensor_id))
         if not self._inited:
             raise RuntimeError("Must call init() before posting tensor to proposed scheduler.")
         num_partitions = len(finish_cbs)
@@ -66,6 +67,7 @@ class ProposedWrapper(object):
             raise RuntimeError("Failed to post tensor to proposed scheduler.")
 
     def proposed_signal_partition_finished(self, tensor_id, partition_id):
+        print("[{}] signal_partition_finished called.".format(self.get_rank()))
         if not self._inited:
             raise RuntimeError("Must call init() before signaling partition finished.")
         status = self.COMM_CTYPES.proposed_signal_partition_finished(

@@ -44,6 +44,7 @@ class ByteTask(with_metaclass(ABCMeta)):
         self.children = None
         self.partition_count = 1
         self.done_count = 0
+        self.max_partition = max_partition
         self._done_count_lock = Lock()
         self.ready_count = 0
         self._ready_count_lock = Lock()
@@ -287,9 +288,11 @@ class ByteTask(with_metaclass(ABCMeta)):
         if self.children is not None:
             for sub_task in self.children:
                 cbs.append(lambda t=sub_task: t.do(t.end_callback, t.end_callback_context))
+            # print("[{}] Posting {} to proposed scheduler with op {}.".format(proposed.get_rank(),self.name, self.op))
             proposed.post_tensor(self.id, cbs, self.priority)
         else:
             cbs.append(lambda t=self: t.do(t.end_callback, t.end_callback_context))
+            # print("[{}] Posting {} to proposed scheduler with op {}.".format(proposed.get_rank(),self.name, self.op))
             proposed.post_tensor(self.id, cbs, self.priority, assigned_server=self._assigned_server)
 
     def register_end_callback(self, callback = None, callback_context=None):

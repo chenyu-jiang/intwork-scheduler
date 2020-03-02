@@ -3,6 +3,8 @@ import mxnet as mx
 import logging
 from .kvstore_task import KVStoreTask
 from ..common.bytecore import core
+import bytescheduler.proposed as proposed
+
 
 
 class ScheduledKVStore(mx.kvstore.KVStore):
@@ -24,12 +26,7 @@ class ScheduledKVStore(mx.kvstore.KVStore):
         """
         self._logger = logging.getLogger("ByteScheduler")
         self._kvstore = kvstore
-        self._rank = self._kvstore.rank
-
-        # each worker schedules its tasks individually.
-        self._immediate = False
-        if self._rank != 0:
-            self._immediate = True
+        self._rank = proposed.get_rank()
 
         # Buffer a push request of each key
         self._push_buffer = dict()
@@ -93,7 +90,7 @@ class ScheduledKVStore(mx.kvstore.KVStore):
                 self._str_key_int[key],
                 out,
                 "pull",
-                priority=-priority * 1000,
+                priority=-priority,
                 comm=self._kvstore,
                 immediate=True,
                 step=self._step,
@@ -114,9 +111,9 @@ class ScheduledKVStore(mx.kvstore.KVStore):
                 self._str_key_int[key],
                 (_value, out),
                 "push_pull",
-                priority=-priority * 1000,
+                priority=-priority,
                 comm=self._kvstore,
-                immediate=self._immediate,
+                immediate=False,
                 step=self._step,
                 rank=self._rank,
                 ignore_sparse=ignore_sparse,

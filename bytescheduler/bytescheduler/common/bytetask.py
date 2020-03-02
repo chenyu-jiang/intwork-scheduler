@@ -38,10 +38,7 @@ class ByteTask(with_metaclass(ABCMeta)):
         self.name = str(name)
         self.id = int(id)
         self.op = op
-        if parent is None:
-            self.priority = int(priority) * max_partition
-        else:
-            self.priority = int(priority)
+        self.priority = int(priority)
         self.parent = parent
         self.kwargs = kwargs
         self.children = None
@@ -156,6 +153,11 @@ class ByteTask(with_metaclass(ABCMeta)):
 
         self._thread = Thread(target=background, args=[self])
         self._thread.start()
+
+    def set_assigned_server(self, asgd_server):
+        if self._assigned_server is not None:
+            raise RuntimeError("Assigned server already set in task {}.".format(self.name))
+        self._assigned_server = asgd_server
 
     def wait_until_finish(self):
         """Block until the task is finished"""
@@ -282,9 +284,13 @@ class ByteTask(with_metaclass(ABCMeta)):
 
     def post_to_proposed(self):
         cbs = []
-        for sub_task in self.children:
-            cbs.append(lambda t=sub_task: t.do(t.end_callback, t.end_callback_context))
-        proposed.post_tensor(self.id, cbs, self.priority)
+        if self.children is not None:
+            for sub_task in self.children:
+                cbs.append(lambda t=sub_task: t.do(t.end_callback, t.end_callback_context))
+            proposed.post_tensor(self.id, cbs, self.priority)
+        else:
+            cbs.append(lambda t=self: t.do(t.end_callback, t.end_callback_context))
+            proposed.post_tensor(self.id, cbs, self.priority, assigned_server=self._assigned_server)
 
     def register_end_callback(self, callback = None, callback_context=None):
         self.end_callback = callback
@@ -334,7 +340,7 @@ class ByteTask(with_metaclass(ABCMeta)):
                     self.id,
                     tensor_partitions[i],
                     self.op,
-                    priority=(self.priority + i),
+                    priority=(self.priority * self.max_partition + i),
                     comm=self._comm,
                     parent=self,
                     add_notify_finish_trigger=self._add_notify_finish_trigger,

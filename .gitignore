@@ -16,3 +16,9 @@
 
 # zip
 *.zip
+
+# build files
+build/
+
+# py cache
+__pycache__/

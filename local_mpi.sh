@@ -43,7 +43,7 @@ export DMLC_ROLE='worker'
 
 MPI_CMD="mpirun "
 for ((i=0; i<${DMLC_NUM_WORKER}; ++i)); do
-    MPI_CMD="${MPI_CMD} -np 1 -x HEAPPROFILE=./W${i} ${bin} ${arg}"
+    MPI_CMD="${MPI_CMD} -np 1 -x HEAPPROFILE=./W${i} -x BYTESCHEDULER_PARTITION=3  ${bin} ${arg}"
     if [ ${i} -ne $((${DMLC_NUM_WORKER} -1)) ]
     then 
         MPI_CMD="${MPI_CMD} :"

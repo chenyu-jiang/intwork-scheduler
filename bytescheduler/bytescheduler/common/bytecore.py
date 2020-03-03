@@ -179,20 +179,18 @@ class ByteCore(object):
 
             # The callback runs when a non-immediate task is ready.
             def _start_callback(task, self):
-                print("Start call back called by {}".format(task.desc))
                 with self._pending_lock:
                     self._pending.remove(task)
                 with self._condition:
                     self._running.add(task)
-                print("Start call back exited, by {}".format(task.desc))
 
             # The callback runs after an non-immediate task is finished.
             def _end_callback(task, self):
-                print("End callback called with tensor {}, id {}.".format(task.name, task.id))
+                # print("End callback called with tensor {}, id {}.".format(task.name, task.id))
                 with self._condition:
                     self._running.remove(task)
-                self._finished[task.name] = task
-                proposed.proposed_signal_partition_finished(task.id, task.partition_id)
+                    self._finished[task.name] = task
+                proposed.proposed_signal_partition_finished(task.id, task._partition_index)
 
             # Prepare the task, i.e., add dependency Proxies.
             for t in subtasks:

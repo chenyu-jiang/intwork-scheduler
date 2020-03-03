@@ -67,7 +67,8 @@ class ProposedWrapper(object):
             raise RuntimeError("Failed to post tensor to proposed scheduler.")
 
     def proposed_signal_partition_finished(self, tensor_id, partition_id):
-        print("[{}] signal_partition_finished called.".format(self.get_rank()))
+        # print("WTF WHY!!")
+        # print("[{}] signal_partition_finished called.".format(self.get_rank()))
         if not self._inited:
             raise RuntimeError("Must call init() before signaling partition finished.")
         status = self.COMM_CTYPES.proposed_signal_partition_finished(

@@ -367,6 +367,8 @@ class KVStoreDistServer {
       // for (const auto& req : update_buf->request) {
       //   server->Response(req);
       // }
+      if (has_multi_precision_copy(type)) CopyFromTo(stored, store_[key]);
+      stored.WaitToRead();
       int32_t num_pull_reqs = update_buf->request.size();
       for(int32_t req_id=0; req_id<num_pull_reqs; req_id++) {
         SendPullResponses(type, key, update_buf->request[req_id], 
@@ -376,8 +378,6 @@ class KVStoreDistServer {
       update_buf->req_data.clear();
       update_buf->update_finished = true;
       update_buf->push_count = 0;
-      if (has_multi_precision_copy(type)) CopyFromTo(stored, store_[key]);
-      stored.WaitToRead();
     } else {
       update_buf->merged.WaitToRead();
     }
@@ -595,8 +595,10 @@ class KVStoreDistServer {
                               ps::KVServer<char>* server) {
     auto &updates = update_buf_[key];
     if(!sync_mode_ || updates.update_finished) {
+      // std::cout << "Directly sending values." << std::endl;
       SendPullResponses(type, key, req_meta, req_data, server);
     } else {
+      // std::cout << "Delaying sending values." << std::endl;
       updates.request.push_back(req_meta);
       updates.req_data.push_back(req_data);
     }
@@ -756,7 +758,7 @@ class KVStoreDistServer {
           }
         }
         // Modification: send response here
-        std::cout << "Push finished for key: " + std::to_string(key) + "." << std::endl;
+        // std::cout << "Push finished for key: " + std::to_string(key) + "." << std::endl;
         server->Response(req_meta);
         updates.push_count ++;
         // updates.request.push_back(req_meta);

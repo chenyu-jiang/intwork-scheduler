@@ -14,8 +14,10 @@ export BYTESCHEDULER_CREDIT_TUNING=0
 # export BYTESCHEDULER_DEBUG=1
 
 export DMLC_NUM_SERVER=$1
+echo "NUM_SERVER = ${DMLC_NUM_SERVER}"
 shift
 export DMLC_NUM_WORKER=$1
+echo "NUM_WORKER = ${DMLC_NUM_WORKER}"
 shift
 bin=$1
 shift

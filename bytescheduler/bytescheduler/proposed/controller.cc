@@ -82,7 +82,7 @@ Controller::ProcessResponses_(const std::vector<Response>& recvd_responses) {
       throw std::runtime_error("Response of type ERROR received.");
     }
     // response of type release, call the tensor manager
-    Log("Releasing tensor i:"+std::to_string(res.tensor_id())+", p:"+std::to_string(res.partition_id())+".")
+    Log("Releasing tensor i:"+std::to_string(res.tensor_id())+", p:"+std::to_string(res.partition_id())+".");
     tensor_manager_.ReleaseTensor(res.tensor_id(), res.partition_id());
   }
 }
@@ -174,6 +174,7 @@ void Controller::RunMainLoop_() {
 }
 
 void Controller::PostTensor(std::vector<Tensor>& tensors, int32_t priority, int32_t assigned_server) {
+  // Log("Posted tensor with tensor id "+ std::to_string(tensors[0].tensor_id));
   tensor_manager_.PostTensor(tensors, priority, assigned_server);
   if (is_coordinator_) ConstructTensorPacks_(tensors[0].tensor_id);
 }

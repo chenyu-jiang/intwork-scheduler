@@ -26,7 +26,6 @@ class ScheduledKVStore(mx.kvstore.KVStore):
         """
         self._logger = logging.getLogger("ByteScheduler")
         self._kvstore = kvstore
-        self._rank = proposed.get_rank()
 
         # Buffer a push request of each key
         self._push_buffer = dict()
@@ -42,7 +41,9 @@ class ScheduledKVStore(mx.kvstore.KVStore):
         self._step = 0
 
         # Start core
-        core.start(rank=self._rank, arch="ps")
+        core.start(arch="ps")
+
+        self._rank = proposed.get_rank()
 
     def __getattr__(self, item):
         return getattr(self._kvstore, item)

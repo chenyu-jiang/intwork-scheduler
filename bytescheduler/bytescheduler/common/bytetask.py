@@ -142,6 +142,7 @@ class ByteTask(with_metaclass(ABCMeta)):
         if self.parent is not None:
             self.parent._started = True
 
+
         self._logger.debug(
             "{} do() started".format(self.desc))
         return
@@ -287,12 +288,16 @@ class ByteTask(with_metaclass(ABCMeta)):
         cbs = []
         if self.children is not None:
             for sub_task in self.children:
-                cbs.append(lambda t=sub_task: t.do(t.end_callback, t.end_callback_context))
+                def this_cb(t = sub_task, na=sub_task.name, id=sub_task.id):
+                    t.do(t.end_callback, t.end_callback_context)
+                cbs.append(this_cb)
             # print("[{}] Posting {} to proposed scheduler with op {}.".format(proposed.get_rank(),self.name, self.op))
             proposed.post_tensor(self.id, cbs, self.priority)
         else:
-            cbs.append(lambda t=self: t.do(t.end_callback, t.end_callback_context))
-            # print("[{}] Posting {} to proposed scheduler with op {}.".format(proposed.get_rank(),self.name, self.op))
+            def this_cb(t = self, na=self.name, id=self.id):
+                t.do(t.end_callback, t.end_callback_context)
+            cbs.append(this_cb)
+            # print("[{}] Posting small tensor {} to proposed scheduler with op {}, assigned server {}.".format(proposed.get_rank(), self.name, self.op, self._assigned_server))
             proposed.post_tensor(self.id, cbs, self.priority, assigned_server=self._assigned_server)
 
     def register_end_callback(self, callback = None, callback_context=None):

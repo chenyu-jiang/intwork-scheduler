@@ -76,7 +76,7 @@ class ByteCore(object):
         self._timeline = os.environ.get('BYTESCHEDULER_TIMELINE', '')
         self._profiler = None
 
-    def start(self, rank, arch):
+    def start(self, arch):
         """Start core.
         Args:
             rank: the rank of the worker
@@ -85,8 +85,6 @@ class ByteCore(object):
         if self._is_started:
             self._logger.warning("Core is already started.")
             return
-
-        self._rank = rank
 
         # Setup profiler
         if self._rank == 0 and self._timeline:
@@ -101,6 +99,8 @@ class ByteCore(object):
 
         # Initialize proposed scheduler
         proposed.init()
+
+        self._rank = proposed.get_rank()
 
         self._is_started = True
 
@@ -161,7 +161,7 @@ class ByteCore(object):
 
             # A task will bypass scheduling and start immediately after partition if immediate is True.
             if task.is_immediate():
-                print("[{}] Running immediate task {} with op {}.".format(proposed.get_rank(), task.name, task.op))
+                # print("[{}] Running immediate task {} with op {}.".format(proposed.get_rank(), task.name, task.op))
                 # The callback runs after an immediate task is finished.
                 def _end_callback(t, self):
                     with self._condition:
@@ -184,6 +184,7 @@ class ByteCore(object):
 
             # The callback runs after an non-immediate task is finished.
             def _end_callback(task, self):
+                print("End callback called with tensor {}, id {}.".format(task.name, task.id))
                 with self._condition:
                     self._running.remove(task)
                 self._finished[task.name] = task

@@ -82,7 +82,7 @@ class KVStoreTask(ByteTask):
             self._logger.error("ERROR: unexpected op type {}!".format(self.op))
 
     def _do(self):
-        """Let the start OP complete so that the real comm OP can run."""
+        """Let the start OP complete so that the real comm OP can run../."""
         if hasattr(self, "_on_complete"):
             check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_on_complete(
                 c_void_p(self._on_complete)))

@@ -189,8 +189,12 @@ class KVStoreDistServer {
   }
 
  private:
-  struct UpdateBuf {
+  struct UpdateBuf { 
+    // Modification: instead of push, request now stores pull requests.
     std::vector<ps::KVMeta> request;
+    std::vector<ps::KVPairs<char>> req_data;
+    int32_t push_count = 0;
+    bool update_finished = true;
     NDArray merged;
     // temp_array is used to cast received values as float32 for computation if required
     NDArray temp_array;
@@ -345,7 +349,7 @@ class KVStoreDistServer {
 
   inline void ApplyUpdates(const DataHandleType type, const int key,
                            UpdateBuf *update_buf, ps::KVServer<char>* server) {
-    if (!sync_mode_ || update_buf->request.size() == (size_t) ps::NumWorkers()) {
+    if (!sync_mode_ || update_buf->push_count == (size_t) ps::NumWorkers()) {
       // let the main thread to execute updater_, which is necessary for python
       auto& stored = has_multi_precision_copy(type) ? store_realt_[key] : store_[key];
       auto& update =  sync_mode_ ? update_buf->merged : update_buf->temp_array;
@@ -359,14 +363,19 @@ class KVStoreDistServer {
         // if no updater, just copy
         CopyFromTo(update_buf->merged, &stored);
       }
-
-      if (log_verbose_)  {
-        LOG(INFO) << "sent response to " << update_buf->request.size() << " workers";
-      }
-      for (const auto& req : update_buf->request) {
-        server->Response(req);
+      // Modification: removed response here
+      // for (const auto& req : update_buf->request) {
+      //   server->Response(req);
+      // }
+      int32_t num_pull_reqs = update_buf->request.size();
+      for(int32_t req_id=0; req_id<num_pull_reqs; req_id++) {
+        SendPullResponses(type, key, update_buf->request[req_id], 
+                          update_buf->req_data[req_id], server);
       }
       update_buf->request.clear();
+      update_buf->req_data.clear();
+      update_buf->update_finished = true;
+      update_buf->push_count = 0;
       if (has_multi_precision_copy(type)) CopyFromTo(stored, store_[key]);
       stored.WaitToRead();
     } else {
@@ -584,20 +593,34 @@ class KVStoreDistServer {
                               const ps::KVMeta& req_meta,
                               const ps::KVPairs<char> &req_data,
                               ps::KVServer<char>* server) {
-    ps::KVPairs<char> response;
-    const NDArray& stored = store_[key];
-    CHECK(!stored.is_none()) << "init " << key << " first";
-
-    // as server returns when store_realt is ready in this case
-    if (has_multi_precision_copy(type)) stored.WaitToRead();
-
-    auto len = stored.shape().Size() * mshadow::mshadow_sizeof(stored.dtype());
-    response.keys = req_data.keys;
-    response.lens = {len};
-    // TODO(mli) try to remove this CopyFrom
-    response.vals.CopyFrom(static_cast<const char*>(stored.data().dptr_), len);
-    server->Response(req_meta, response);
+    auto &updates = update_buf_[key];
+    if(!sync_mode_ || updates.update_finished) {
+      SendPullResponses(type, key, req_meta, req_data, server);
+    } else {
+      updates.request.push_back(req_meta);
+      updates.req_data.push_back(req_data);
+    }
   }
+
+  void SendPullResponses(const DataHandleType type,
+                              const int key,
+                              const ps::KVMeta& req_meta,
+                              const ps::KVPairs<char> &req_data,
+                              ps::KVServer<char>* server) {
+      ps::KVPairs<char> response;
+      const NDArray& stored = store_[key];
+      CHECK(!stored.is_none()) << "init " << key << " first";
+
+      // as server returns when store_realt is ready in this case
+      if (has_multi_precision_copy(type)) stored.WaitToRead();
+
+      auto len = stored.shape().Size() * mshadow::mshadow_sizeof(stored.dtype());
+      response.keys = req_data.keys;
+      response.lens = {len};
+      // TODO(mli) try to remove this CopyFrom
+      response.vals.CopyFrom(static_cast<const char*>(stored.data().dptr_), len);
+      server->Response(req_meta, response);
+    }
 
   void DataHandleCompressed(const DataHandleType type,
                             const ps::KVMeta& req_meta,
@@ -712,8 +735,9 @@ class KVStoreDistServer {
         if (has_multi_precision_copy(type) && updates.temp_array.is_none()) {
           updates.temp_array = NDArray(dshape, Context(), false, mshadow::kFloat32);
         }
-        if (updates.request.empty()) {
+        if (updates.push_count == 0) {
           if (sync_mode_) {
+            updates.update_finished = false;
             CopyFromTo(recved, updates.merged);
           } else {
             if (has_multi_precision_copy(type)) {
@@ -731,7 +755,11 @@ class KVStoreDistServer {
             updates.merged += recved;
           }
         }
-        updates.request.push_back(req_meta);
+        // Modification: send response here
+        std::cout << "Push finished for key: " + std::to_string(key) + "." << std::endl;
+        server->Response(req_meta);
+        updates.push_count ++;
+        // updates.request.push_back(req_meta);
         ApplyUpdates(type, key, &updates, server);
       }
     } else {

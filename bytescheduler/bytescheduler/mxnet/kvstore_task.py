@@ -77,6 +77,12 @@ class KVStoreTask(ByteTask):
 
             # Avoid garbage collection
             self._push_completion_callback = callback_t(push_completion_callback)
+
+            push_avatar = [t.handle for t in tensor[0]] if isinstance(tensor[0], (tuple, list)) else [tensor[0].handle]
+
+            check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_op(
+                push_avatar, 0, push_avatar, 1, self._push_completion_callback, 10000000-self.priority))
+
             self._comm.pull(self.name, out=tensor[1], priority=-self.priority, ignore_sparse=self.kwargs["ignore_sparse"])
         else:
             self._logger.error("ERROR: unexpected op type {}!".format(self.op))
@@ -84,6 +90,7 @@ class KVStoreTask(ByteTask):
     def _do(self):
         """Let the start OP complete so that the real comm OP can run../."""
         if hasattr(self, "_on_complete"):
+            print("{} _do started.".format(self.desc))
             check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_on_complete(
                 c_void_p(self._on_complete)))
         return

@@ -232,6 +232,9 @@ class ByteTask(with_metaclass(ABCMeta)):
         Once the communication of a tensor (all-reduce, push or pull) has been finished, the framework engine must
         notify Core about this, so that Core can continue scheduling more tasks.
         """
+        if self._finished:
+            return
+
         if self.parent is not None:
             parent_finish = self.parent.partition_done()
         else:

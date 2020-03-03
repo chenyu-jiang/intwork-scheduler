@@ -114,7 +114,7 @@ class ScheduledKVStore(mx.kvstore.KVStore):
                 "push_pull",
                 priority=-priority,
                 comm=self._kvstore,
-                immediate=False,
+                immediate= False,
                 step=self._step,
                 rank=self._rank,
                 ignore_sparse=ignore_sparse,

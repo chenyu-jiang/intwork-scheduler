@@ -179,8 +179,12 @@ class ByteCore(object):
 
             # The callback runs when a non-immediate task is ready.
             def _start_callback(task, self):
+                print("Start call back called by {}".format(task.desc))
                 with self._pending_lock:
                     self._pending.remove(task)
+                with self._condition:
+                    self._running.add(task)
+                print("Start call back exited, by {}".format(task.desc))
 
             # The callback runs after an non-immediate task is finished.
             def _end_callback(task, self):

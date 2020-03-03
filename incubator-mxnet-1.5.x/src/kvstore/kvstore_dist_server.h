@@ -370,6 +370,7 @@ class KVStoreDistServer {
       if (has_multi_precision_copy(type)) CopyFromTo(stored, store_[key]);
       stored.WaitToRead();
       int32_t num_pull_reqs = update_buf->request.size();
+      // std::cout << "Sending pulls to " + std::to_string(num_pull_reqs) + " workers." << std::endl;
       for(int32_t req_id=0; req_id<num_pull_reqs; req_id++) {
         SendPullResponses(type, key, update_buf->request[req_id], 
                           update_buf->req_data[req_id], server);

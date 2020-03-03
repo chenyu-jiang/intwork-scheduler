@@ -28,4 +28,14 @@ b = mx.nd.zeros(shape)
 kv.pull("large_tensor", out=[b])
 print("[{}] Got ".format(rank), b.asnumpy())
 
+for i in range(4):
+    print("[{}] Testing push pull without init.".format(rank))
+    shape = (2,3)
+    pushd = mx.nd.random.normal(shape=shape)
+    print("[{}] Pushing ".format(rank), pushd.asnumpy())
+    kv.push("large_tensor", [pushd])
+    b = mx.nd.zeros(shape)
+    kv.pull("large_tensor", out=[b])
+    print("[{}] Got ".format(rank), b.asnumpy())
+
 

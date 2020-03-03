@@ -239,6 +239,7 @@ class ByteTask(with_metaclass(ABCMeta)):
             parent_finish = self.parent.partition_done()
         else:
             parent_finish = True
+            print("{} has finished.".format(self.desc))
             self._notify_upper_layer_finish()
         
         if self._do_callback is not None:
@@ -294,7 +295,7 @@ class ByteTask(with_metaclass(ABCMeta)):
                 def this_cb(t = sub_task, na=sub_task.name, id=sub_task.id):
                     t.do(t.end_callback, t.end_callback_context)
                 cbs.append(this_cb)
-            # print("[{}] Posting {} to proposed scheduler with op {}.".format(proposed.get_rank(),self.name, self.op))
+            print("[{}] Posting {} to proposed scheduler.".format(proposed.get_rank(),self.desc))
             proposed.post_tensor(self.id, cbs, self.priority)
         else:
             def this_cb(t = self, na=self.name, id=self.id):

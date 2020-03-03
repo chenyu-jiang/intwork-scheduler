@@ -32,8 +32,7 @@ namespace common {
 
 bool Controller::IncrementTensorCount_(const Request& msg) {
   if(msg.request_type() != Request::TENSOR_READY)
-    throw std::runtime_error(
-      "Internal: msg with type PARTITION_FINISHED in IncrementTensorCount_");
+    assert( false && "Internal: msg with type PARTITION_FINISHED in IncrementTensorCount_");
   ready_table_[msg.tensor_id()] ++;
   if (ready_table_[msg.tensor_id()] == world_size_) {
     ready_table_[msg.tensor_id()] = 0;
@@ -45,6 +44,7 @@ void Controller::ProcessRequests_(const std::vector<Request>& recvd_requests){
   for(auto& req: recvd_requests) {
     if(req.request_type() == Request::TENSOR_READY) {
       // Received tensor ready message
+      // Log("Received ready message from "+std::to_string(req.tensor_id()) + ".");
       bool all_ready = IncrementTensorCount_(req);
       if(all_ready) {
         if (stp_table_.find(req.tensor_id()) != stp_table_.end()) {
@@ -68,6 +68,7 @@ void Controller::ProcessRequests_(const std::vector<Request>& recvd_requests){
       }
       if(tp_count_table_[req.tensor_id()] == 0) {
         // entire tensor execution finished
+        Log("Deleting tensor " + std::to_string(req.tensor_id()) + " from table.");
         DeleteFromTPTable(req.tensor_id());
         tensor_manager_.DeleteTensorWithID(req.tensor_id());
       }
@@ -79,10 +80,10 @@ void
 Controller::ProcessResponses_(const std::vector<Response>& recvd_responses) {
   for(auto& res: recvd_responses) {
     if (res.response_type() == Response::ERROR) {
-      throw std::runtime_error("Response of type ERROR received.");
+      assert(false && "Response of type ERROR received.");
     }
     // response of type release, call the tensor manager
-    Log("Releasing tensor i:"+std::to_string(res.tensor_id())+", p:"+std::to_string(res.partition_id())+".");
+    // Log("Releasing tensor i: "+ std::to_string(res.tensor_id()) + ",p: " +std::to_string(res.partition_id()));
     tensor_manager_.ReleaseTensor(res.tensor_id(), res.partition_id());
   }
 }
@@ -95,7 +96,7 @@ void Controller::ConstructTensorPacks_(int32_t tensor_id) {
     int32_t priority = tensor_manager_.GetPriority(tensor_id);
     int32_t assigned_server = tensor_manager_.GetAssignedServer(tensor_id);
     if(assigned_server == -1)
-      throw std::runtime_error("Unregistered assigned server for small tensor in tensor_manager.");
+      assert(false && "Unregistered assigned server for small tensor in tensor_manager.");
     std::vector<TensorPackElement> spack;
     for(int32_t worker_id = 0; worker_id < world_size_; worker_id++) {
       spack.emplace_back(TensorPackElement(worker_id, tensor_id, 0));
@@ -160,7 +161,7 @@ void Controller::RunLoopOnce_() {
 void Controller::LaunchBackGroundThread() {
   static bool thread_launched = false;
   if (thread_launched == true) {
-    throw std::runtime_error("BG Thread cannot be launched twice.");
+    assert(false && "BG Thread cannot be launched twice.");
   }
   bg_thread = std::thread(&Controller::RunMainLoop_, this);
   thread_launched = true;
@@ -174,7 +175,7 @@ void Controller::RunMainLoop_() {
 }
 
 void Controller::PostTensor(std::vector<Tensor>& tensors, int32_t priority, int32_t assigned_server) {
-  // Log("Posted tensor with tensor id "+ std::to_string(tensors[0].tensor_id));
+  // Log("In Controller: Posted tensor with tensor id "+ std::to_string(tensors[0].tensor_id));
   tensor_manager_.PostTensor(tensors, priority, assigned_server);
   if (is_coordinator_) ConstructTensorPacks_(tensors[0].tensor_id);
 }
@@ -192,7 +193,7 @@ void Controller::Log(std::string str) {
 
 bool TensorPack::IncrementReceivedCount() {
     if(count_finished_ >= num_workers_) 
-      throw std::runtime_error("Received count already reached worker number.");
+      assert( false && "Received count already reached worker number.");
     count_finished_ ++;
     if(count_finished_ == num_workers_) return true;
     else return false;
@@ -221,7 +222,7 @@ std::string TensorPack::to_string() const {
 // SmallTensorPack =============================================================
 
 void SmallTensorPack::SetFirstWorker(int32_t worker_id) {
-  if(worker_id >= num_workers_) throw std::runtime_error("Worker id does not exist.");
+  if(worker_id >= num_workers_) assert( false && "Worker id does not exist.");
   worker_offset_ = worker_id;
 }
 
@@ -246,8 +247,7 @@ std::string SmallTensorPack::to_string() const {
 
 Status PackExecutor::SignalPushFinished() {
   if(executing_ == false)
-    throw std::runtime_error(
-      "PushFinished signal received while executor is not executing.");
+    assert( false && "PushFinished signal received while executor is not executing.");
   
   bool step_finished = executing_tp_.IncrementReceivedCount();
   if(step_finished) {
@@ -307,7 +307,7 @@ void PackExecutor::Post(TensorPack pack) {
 
 void SmallTensorExecutor::Finalize() {
   if(! tensor_manager_.IsFinalized()) 
-    throw std::runtime_error("Must finalize tensor manager before initializing SmallTensorExecutor.");
+    assert(false && "Must finalize tensor manager before initializing SmallTensorExecutor.");
   world_size_ = tensor_manager_.GetWorldSize();
   executing_tps_.resize(world_size_);
 
@@ -318,14 +318,13 @@ void SmallTensorExecutor::Finalize() {
 }
 
 inline void SmallTensorExecutor::CheckFinalized() {
-  if(! finalized_) throw std::runtime_error("Must finalize SmallTensorExecutor before use.");
+  if(! finalized_)  assert(false && "Must finalize SmallTensorExecutor before use.");
 }
 
 Status SmallTensorExecutor::SignalPushFinished(int32_t tensor_id) {
   CheckFinalized();
   if(tensor_id_to_server_dict_.find(tensor_id) == tensor_id_to_server_dict_.end())
-    throw std::runtime_error(
-      "PushFinished signal received while tensor is not executing.");
+    assert( false && "PushFinished signal received while tensor is not executing.");
     
   int32_t assigned_server = tensor_id_to_server_dict_[tensor_id];
 

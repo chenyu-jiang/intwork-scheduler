@@ -161,7 +161,6 @@ class ByteCore(object):
 
             # A task will bypass scheduling and start immediately after partition if immediate is True.
             if task.is_immediate():
-                # print("[{}] Running immediate task {} with op {}.".format(proposed.get_rank(), task.name, task.op))
                 # The callback runs after an immediate task is finished.
                 def _end_callback(t, self):
                     with self._condition:

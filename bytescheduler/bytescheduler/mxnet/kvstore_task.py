@@ -92,6 +92,7 @@ class KVStoreTask(ByteTask):
     def _do(self):
         """Let the start OP complete so that the real comm OP can run../."""
         if hasattr(self, "_on_complete"):
+            print("_do() has run in {}".format(self.desc))
             check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_on_complete(
                 c_void_p(self._on_complete)))
         return

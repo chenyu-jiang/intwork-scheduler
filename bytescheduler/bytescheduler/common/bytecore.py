@@ -44,7 +44,7 @@ class ByteCore(object):
         self._commands = {'DATA': 0, 'EXIT': 1}
 
         # Control credit
-        self._condition = threading.Condition(threading.Lock())
+        self._running_lock = threading.Lock()
 
         # Pending tasks that are not ready
         self._pending = set()
@@ -121,9 +121,8 @@ class ByteCore(object):
             self._queue.put((sys.maxint, self._commands['EXIT'], None))
         else:
             self._queue.put((-sys.maxint, self._commands['EXIT'], None))
-        with self._condition:
+        with self._running_lock:
             self._credit = sys.maxint
-            self._condition.notify_all()
         self._is_started = False
         self._profiler.stop()
         self._logger.info("shutdown Core {}.".format(self._rank))
@@ -163,14 +162,16 @@ class ByteCore(object):
             if task.is_immediate():
                 # The callback runs after an immediate task is finished.
                 def _end_callback(t, self):
-                    with self._condition:
+                    with self._running_lock:
+                        if t not in self._running:
+                            raise RuntimeError("{} not in _running".format(t.desc))
                         self._running.remove(t)
                         self._finished[t.name] = t
                     # print("[{}] Immediate task {} with op {} finished.".format(proposed.get_rank(), task.name, task.op))
                     self._profiler.put(t.name, t.op + 'COMMUNICATION', 'E')
 
                 for t in subtasks:
-                    with self._condition:
+                    with self._running_lock:
                         self._running.add(t)
                     self._profiler.put(t.name, t.op + 'COMMUNICATION', 'B')
                     t.immediate_do(callback=_end_callback, callback_context=self)
@@ -180,16 +181,17 @@ class ByteCore(object):
             def _start_callback(task, self):
                 with self._pending_lock:
                     self._pending.remove(task)
-                with self._condition:
+                with self._running_lock:
                     self._running.add(task)
 
             # The callback runs after an non-immediate task is finished.
             def _end_callback(task, self):
                 # print("End callback called with tensor {}, id {}.".format(task.name, task.id))
-                with self._condition:
+                with self._running_lock:
+                    if task not in self._running:
+                        raise RuntimeError("{} not in _running".format(task.desc))
                     self._running.remove(task)
                     self._finished[task.name] = task
-                proposed.proposed_signal_partition_finished(task.id, task._partition_index)
 
             # Prepare the task, i.e., add dependency Proxies.
             for t in subtasks:

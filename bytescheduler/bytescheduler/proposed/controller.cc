@@ -20,6 +20,7 @@
 #include <map>
 #include <queue>
 #include <set>
+#include <deque>
 #include <thread>
 #include <chrono>
 #include <unordered_set>
@@ -41,36 +42,43 @@ bool Controller::IncrementTensorCount_(const Request& msg) {
 }
 
 void Controller::ProcessRequests_(const std::vector<Request>& recvd_requests){
+  std::vector<Request> tensor_ready_reqs;
+  // Process Partition finished message first
   for(auto& req: recvd_requests) {
     if(req.request_type() == Request::TENSOR_READY) {
-      // Received tensor ready message
-      // Log("Received ready message from "+std::to_string(req.tensor_id()) + ".");
-      bool all_ready = IncrementTensorCount_(req);
-      if(all_ready) {
-        if (stp_table_.find(req.tensor_id()) != stp_table_.end()) {
-          // is small tensor
-          small_tensor_executor_.Post(stp_table_.at(req.tensor_id()));
-        } else {
-          // Not a small tensor
-          // Push copies of tensorpack of this tensor into executor
-          for(auto tp: tp_table_.at(req.tensor_id())) {
-            pack_executor_.Post(tp);
-          }
-        }
-      }
+      // Received tensor ready message, push it to dequeue
+      tensor_ready_reqs.push_back(req);
     } else {
+      std::lock_guard<std::mutex> guard(mutex_);
       // Received partition finished message
       if(stp_table_.find(req.tensor_id()) != stp_table_.end()) {
         // is small tensor
         small_tensor_executor_.SignalPushFinished(req.tensor_id());
       } else {
+        assert(tp_table_.find(req.tensor_id()) != tp_table_.end());
         pack_executor_.SignalPushFinished();
       }
-      if(tp_count_table_[req.tensor_id()] == 0) {
-        // entire tensor execution finished
-        Log("Deleting tensor " + std::to_string(req.tensor_id()) + " from table.");
-        DeleteFromTPTable(req.tensor_id());
-        tensor_manager_.DeleteTensorWithID(req.tensor_id());
+    }
+  }
+
+  for(auto& req: tensor_ready_reqs) {
+    // Log("Received ready message from "+std::to_string(req.tensor_id()) + ".");
+    bool all_ready = IncrementTensorCount_(req);
+    if(all_ready) {
+      // Log("All ready for tensor " + std::to_string(req.tensor_id()));
+      std::lock_guard<std::mutex> guard(mutex_);
+      if (stp_table_.find(req.tensor_id()) != stp_table_.end()) {
+        // is small tensor
+        small_tensor_executor_.Post(stp_table_.at(req.tensor_id()));
+      } else {
+        // Not a small tensor
+        // Push copies of tensorpack of this tensor into executor
+        assert(tp_table_.find(req.tensor_id()) != tp_table_.end());
+        // Log("tp_table_ tensor id " + std::to_string(req.tensor_id()) + " size: " + std::to_string(tp_table_.at(req.tensor_id()).size()));
+        for(auto tp: tp_table_.at(req.tensor_id())) {
+          // Log("Posted tp " + std::to_string(tp.get_tensor_id()) + " to executor.");
+          pack_executor_.Post(tp);
+        }
       }
     }
   }
@@ -88,49 +96,61 @@ Controller::ProcessResponses_(const std::vector<Response>& recvd_responses) {
   }
 }
 
-void Controller::ConstructTensorPacks_(int32_t tensor_id) {
-  int32_t num_partitions = tensor_manager_.GetNumPartitions(tensor_id);
-  
+void Controller::ConstructTensorPacks_(int32_t tensor_id, int32_t num_partitions, 
+                                        int32_t priority, int32_t assigned_server) {
   if(num_partitions == 1) {
     // Small tensor
-    int32_t priority = tensor_manager_.GetPriority(tensor_id);
-    int32_t assigned_server = tensor_manager_.GetAssignedServer(tensor_id);
     if(assigned_server == -1)
       assert(false && "Unregistered assigned server for small tensor in tensor_manager.");
     std::vector<TensorPackElement> spack;
     for(int32_t worker_id = 0; worker_id < world_size_; worker_id++) {
       spack.emplace_back(TensorPackElement(worker_id, tensor_id, 0));
     }
-    stp_table_[tensor_id] = 
-      SmallTensorPack(spack, priority, [this, tensor_id]{this->tp_count_table_[tensor_id] --;}, assigned_server);
-    tp_count_table_[tensor_id] = 1;
+    {
+      // Critical Section
+      std::lock_guard<std::mutex> guard(mutex_);
+      stp_table_[tensor_id] = 
+        SmallTensorPack(spack, priority, 
+                        [this, tensor_id] {
+                          this->tp_count_table_[tensor_id] --;
+                        }, 
+                        assigned_server);
+      assert(tp_count_table_[tensor_id] == 0);
+      tp_count_table_[tensor_id] = 1;
+    }
   } else {
     // sanity check
     assert(num_partitions % world_size_ == 0);
-
-    int32_t priority = tensor_manager_.GetPriority(tensor_id);
     int32_t num_packs = num_partitions / world_size_;
-
-    for(int32_t pack_id=0; pack_id < num_packs; pack_id++) {
-      std::vector<std::vector<TensorPackElement>> pack;
-      for(int32_t step_id=0; step_id < world_size_; step_id++) {
-        std::vector<TensorPackElement> step_elements;
-        for(int32_t worker_id=0; worker_id<world_size_; worker_id++) {
-          int32_t current_partition_id = 
-            pack_id*world_size_+ ((step_id+worker_id) % world_size_);
-          step_elements.emplace_back(
-            TensorPackElement(worker_id, tensor_id, current_partition_id));
+    {
+      // Critical Section
+      std::lock_guard<std::mutex> guard(mutex_);
+      tp_table_[tensor_id].clear();
+      for(int32_t pack_id=0; pack_id < num_packs; pack_id++) {
+        std::vector<std::vector<TensorPackElement>> pack;
+        for(int32_t step_id=0; step_id < world_size_; step_id++) {
+          std::vector<TensorPackElement> step_elements;
+          for(int32_t worker_id=0; worker_id<world_size_; worker_id++) {
+            int32_t current_partition_id = 
+              pack_id*world_size_+ ((step_id+worker_id) % world_size_);
+            step_elements.emplace_back(
+              TensorPackElement(worker_id, tensor_id, current_partition_id));
+          }
+          pack.emplace_back(std::move(step_elements));
         }
-        pack.emplace_back(std::move(step_elements));
+        tp_table_[tensor_id].emplace_back(
+          TensorPack(pack, priority, 
+                    [this, tensor_id] {
+                      this->tp_count_table_[tensor_id] --;
+                    }));
       }
-      tp_table_[tensor_id].emplace_back(
-        TensorPack(pack, priority, 
-                  [this, tensor_id]{this->tp_count_table_[tensor_id] --;} ));
+      assert(tp_count_table_[tensor_id] == 0);
+      tp_count_table_[tensor_id] = num_packs;
     }
-    tp_count_table_[tensor_id] = num_packs;
   }
 }
 
+// Must be called with mutex
 void Controller::DeleteFromTPTable(int32_t tensor_id) {
   if(stp_table_.find(tensor_id) != stp_table_.end()) {
     stp_table_.erase(tensor_id);
@@ -170,15 +190,17 @@ void Controller::LaunchBackGroundThread() {
 void Controller::RunMainLoop_() {
   while(true) {
     RunLoopOnce_();
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    std::this_thread::sleep_for(std::chrono::nanoseconds(10));
   }
 }
 
+
 void Controller::PostTensor(std::vector<Tensor>& tensors, int32_t priority, int32_t assigned_server) {
-  // Log("In Controller: Posted tensor with tensor id "+ std::to_string(tensors[0].tensor_id));
+  // Log("In Controller: Posted tensor with tensor id "+ std::to_string(tensors[0].tensor_id) + " with # partition " + std::to_string(tensors.size()));
+  if (is_coordinator_) ConstructTensorPacks_(tensors[0].tensor_id, tensors.size(), priority, assigned_server);
   tensor_manager_.PostTensor(tensors, priority, assigned_server);
-  if (is_coordinator_) ConstructTensorPacks_(tensors[0].tensor_id);
 }
+
 
 void 
 Controller::SignalPartitionFinished(int32_t tensor_id, int32_t partition_id) {
@@ -205,6 +227,9 @@ const std::vector<TensorPackElement> TensorPack::YieldTensorPackElements() {
     }
     current_step_ ++;
     count_finished_ = 0;
+    if (current_step_ == num_workers_) {
+      on_finish();
+    }
     return tensors_[current_step_-1];
 }
 
@@ -231,6 +256,9 @@ const TensorPackElement SmallTensorPack::YieldTensorPackElements() {
       return TensorPackElement();
     }
     current_step_ ++;
+    if(current_step_ == num_workers_) {
+      on_finish();
+    }
     return tensors_[(current_step_ + worker_offset_ - 1) % num_workers_];
 }
 
@@ -245,6 +273,7 @@ std::string SmallTensorPack::to_string() const {
 
 // PackExecutor ================================================================
 
+// This is called under a mutex
 Status PackExecutor::SignalPushFinished() {
   if(executing_ == false)
     assert( false && "PushFinished signal received while executor is not executing.");
@@ -263,7 +292,8 @@ Status PackExecutor::SignalPushFinished() {
     } else {
       // TP execution complete
       executing_ = false;
-      executing_tp_.on_finish();
+      // std::cout << "Calling on_finish in PackExecutor." << std::endl;
+      // executing_tp_.on_finish();
       ExecutePackInQueue_();
     }
   }
@@ -275,6 +305,7 @@ bool PackExecutor::ExecutePackInQueue_() {
 
   if(! tp_queue_.empty()) {
     executing_tp_ = tp_queue_.top();
+    // std::cout << "Executing tp " + std::to_string(executing_tp_.get_tensor_id()) << std::endl;
     executing_ = true;
     tp_queue_.pop();
     std::vector<Response> responses = 
@@ -298,6 +329,7 @@ const {
 }
 
 void PackExecutor::Post(TensorPack pack) {
+  // std::cout << "Posting tp " + std::to_string(pack.get_tensor_id()) +" to PackExecutor." << std::endl;
   tp_queue_.emplace(std::move(pack));
   ExecutePackInQueue_();
 }
@@ -321,6 +353,7 @@ inline void SmallTensorExecutor::CheckFinalized() {
   if(! finalized_)  assert(false && "Must finalize SmallTensorExecutor before use.");
 }
 
+// this is called under a mutex
 Status SmallTensorExecutor::SignalPushFinished(int32_t tensor_id) {
   CheckFinalized();
   if(tensor_id_to_server_dict_.find(tensor_id) == tensor_id_to_server_dict_.end())
@@ -337,7 +370,8 @@ Status SmallTensorExecutor::SignalPushFinished(int32_t tensor_id) {
   } else {
     // TP execution complete
     idle_servers.insert(assigned_server);
-    executing_tps_[assigned_server].on_finish();
+    // std::cout << "Calling on_finish in SmallTensorExecutor." << std::endl;
+    // executing_tps_[assigned_server].on_finish();
     ExecutePackInQueue_();
   }
   return Status::OK();

@@ -9,6 +9,8 @@ from mxnet.ndarray import zeros
 from ..common import get_ext_suffix
 from ..common.bytetask import ByteTask
 
+import bytescheduler.proposed as proposed
+
 
 # Load c_lib.so
 dll_path = os.path.join(os.path.dirname(__file__),
@@ -73,7 +75,7 @@ class KVStoreTask(ByteTask):
                 check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_on_complete(
                     c_void_p(on_complete)))
                 # Called after push instead pull
-                self.notify_finish()
+                proposed.proposed_signal_partition_finished(self.id, self._partition_index)
 
             # Avoid garbage collection
             self._push_completion_callback = callback_t(push_completion_callback)
@@ -92,7 +94,7 @@ class KVStoreTask(ByteTask):
     def _do(self):
         """Let the start OP complete so that the real comm OP can run../."""
         if hasattr(self, "_on_complete"):
-            print("_do() has run in {}".format(self.desc))
+            # print("_do() has run in {}".format(self.desc))
             check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_on_complete(
                 c_void_p(self._on_complete)))
         return

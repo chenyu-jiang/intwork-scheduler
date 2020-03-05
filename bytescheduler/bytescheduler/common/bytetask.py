@@ -232,14 +232,12 @@ class ByteTask(with_metaclass(ABCMeta)):
         Once the communication of a tensor (all-reduce, push or pull) has been finished, the framework engine must
         notify Core about this, so that Core can continue scheduling more tasks.
         """
-        if self._finished:
-            return
 
         if self.parent is not None:
             parent_finish = self.parent.partition_done()
         else:
             parent_finish = True
-            print("{} has finished.".format(self.desc))
+            # print("{} has finished.".format(self.desc))
             self._notify_upper_layer_finish()
         
         if self._do_callback is not None:
@@ -295,7 +293,7 @@ class ByteTask(with_metaclass(ABCMeta)):
                 def this_cb(t = sub_task, na=sub_task.name, id=sub_task.id):
                     t.do(t.end_callback, t.end_callback_context)
                 cbs.append(this_cb)
-            print("[{}] Posting {} to proposed scheduler.".format(proposed.get_rank(),self.desc))
+            # print("[{}] Posting {} to proposed scheduler.".format(proposed.get_rank(),self.desc))
             proposed.post_tensor(self.id, cbs, self.priority)
         else:
             def this_cb(t = self, na=self.name, id=self.id):

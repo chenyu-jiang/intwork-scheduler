@@ -20,6 +20,7 @@
 #include <iostream>
 #include <mutex>
 #include <queue>
+#include <cassert>
 
 #include "common.h"
 #include "message.h"
@@ -75,8 +76,7 @@ public:
 
 protected:
   void CheckFinalized() {
-    if (!finalized_) throw std::runtime_error(
-      "TensorManager must be finalized before starting to operate.");
+    if (!finalized_) assert( false && "TensorManager must be finalized before starting to operate.");
   }
 
   bool finalized_ = false;
@@ -86,6 +86,8 @@ protected:
   int32_t world_size_ = 0;
 
   TensorTable tensor_table_;
+
+  std::unordered_map<int32_t, int32_t> tensor_count_table_;
 
   std::unordered_map<int32_t, int32_t> assigned_server_dict_;
 

@@ -21,6 +21,7 @@
 #include <queue>
 #include <vector>
 #include <thread>
+#include <mutex>
 #include <unordered_set>
 #include "tensor_manager.h"
 #include "common.h"
@@ -67,7 +68,7 @@ public:
   TensorPack(const std::vector<std::vector<TensorPackElement>>& tensors, 
             int32_t priority, PackExecutionCallback cb):
               tensors_(tensors), 
-              num_workers_(tensors.size()), priority(priority), cb(cb) {}
+              num_workers_(tensors.size()), priority(priority), cb_(std::move(cb)) {}
 
   bool IncrementReceivedCount();
 
@@ -75,7 +76,7 @@ public:
 
   int32_t get_tensor_id() const {return tensors_[0][0].tensor_id;}
 
-  void on_finish() {cb();}
+  void on_finish() {cb_();}
 
   std::string to_string() const;
 
@@ -85,7 +86,7 @@ private:
   int32_t num_workers_ = 0;
   int32_t current_step_ = 0;
   int32_t count_finished_ = 0;
-  PackExecutionCallback cb;
+  PackExecutionCallback cb_;
   std::vector<std::vector<TensorPackElement>> tensors_;
 };
 
@@ -104,7 +105,7 @@ public:
               tensors_(tensors), 
               num_workers_(tensors.size()), 
               priority(tensor_priority), 
-              cb(callback),
+              cb_(std::move(callback)),
               assigned_server_(assigned_server) {}
 
   void SetFirstWorker(int32_t worker_id);
@@ -117,7 +118,7 @@ public:
 
   int32_t get_assigned_server() const {return assigned_server_;}
 
-  void on_finish() {cb();}
+  void on_finish() {cb_();}
 
   std::string to_string() const;
 
@@ -128,7 +129,7 @@ protected:
   int32_t current_step_ = 0;
   int32_t worker_offset_ = 0;
   int32_t assigned_server_ = -1;
-  PackExecutionCallback cb;
+  PackExecutionCallback cb_;
 
 private:
   std::vector<TensorPackElement> tensors_;
@@ -249,7 +250,8 @@ protected:
   virtual std::vector<Response> 
     SendResponses_(const std::vector<ResponseList>& response_list) = 0;
 
-  void ConstructTensorPacks_(int32_t tensor_id);
+  void ConstructTensorPacks_(int32_t tensor_id, int32_t num_partitions, 
+                              int32_t priority, int32_t assigned_server);
 
   void DeleteFromTPTable(int32_t tensor_id);
 
@@ -268,6 +270,8 @@ protected:
   int rank_ = 0;
   int world_size_ = 1;
   bool is_coordinator_ = false;
+
+  mutable std::mutex mutex_;
 
   TensorManager tensor_manager_;
 

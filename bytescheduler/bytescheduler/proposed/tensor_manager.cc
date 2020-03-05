@@ -35,20 +35,23 @@ void TensorManager::Finalize() {
 void TensorManager::PostTensor(std::vector<Tensor>& tensors, int32_t priority, int32_t assigned_server) {
   std::lock_guard<std::mutex> guard(mutex_);
   CheckFinalized();
-  std::cout << "At the start of PostTensor." << std::endl;
+  // std::cout << "At the start of PostTensor." << std::endl;
   // Add tensor into the tensor table
   if(tensors.size() == 0)
     assert(false && "Posted tensor with size 0.");
-  std::cout << "Before getting tensor_id." << std::endl;
+  // std::cout << "Before getting tensor_id." << std::endl;
   int32_t tensor_id = tensors[0].tensor_id;
 
-  std::cout << "Before checking dup key." << std::endl;
+  // std::cout << "Before checking dup key." << std::endl;
   if (tensor_table_.find(tensor_id) != tensor_table_.end()) {
+    std::cout<< "Duplicate Key detected: " + std::to_string(tensor_id) << std::endl;
     assert(false && "Duplicate key in tensor table.");
   }
 
   tensor_table_.emplace(tensor_id, 
                         TensorTableElement(tensors, tensor_id, priority));
+  assert(tensor_count_table_[tensor_id] == 0);
+  tensor_count_table_[tensor_id] = tensors.size();
   
   // Check if is small tensor
   if(tensors.size() == 1) {
@@ -61,10 +64,11 @@ void TensorManager::PostTensor(std::vector<Tensor>& tensors, int32_t priority, i
   // formulate a layer ready request and push it into the queue
   request_list_.emplace_request(
     Request(rank_, Request::TENSOR_READY, tensor_id, -1));
-  std::cout << "Placed Request." << std::endl;
+  // std::cout << "Placed Request." << std::endl;
 }
 
 int32_t TensorManager::GetAssignedServer(int32_t tensor_id) const {
+  std::lock_guard<std::mutex> guard(mutex_);
   if(assigned_server_dict_.find(tensor_id) == assigned_server_dict_.end())
     return -1;
   return assigned_server_dict_.at(tensor_id);
@@ -72,6 +76,7 @@ int32_t TensorManager::GetAssignedServer(int32_t tensor_id) const {
 
 void TensorManager::DeleteTensorWithID(int32_t tensor_id) {
   tensor_table_.erase(tensor_id);
+  // std::cout << "In TensorManager: check erased " + std::to_string(tensor_table_.find(tensor_id) == tensor_table_.end()) << std::endl;
   if(assigned_server_dict_.find(tensor_id) != assigned_server_dict_.end())
     assigned_server_dict_.erase(tensor_id);
 }
@@ -86,7 +91,15 @@ TensorManager::SignalPartitionFinished(int32_t tensor_id, int32_t partition_id) 
 
 void TensorManager::ReleaseTensor(int32_t tensor_id, int32_t partition_id) {
   CheckFinalized();
-  GetTensor(tensor_id, partition_id).ready_cb();
+  {
+    std::lock_guard<std::mutex> guard(mutex_);
+    // std::cout << "Releasing id " + std::to_string(tensor_id) + " p " + std::to_string(partition_id) + " at " + std::to_string(rank_) << std::endl;
+    GetTensor(tensor_id, partition_id).ready_cb();
+    tensor_count_table_[tensor_id] --;
+    if (tensor_count_table_[tensor_id] == 0) {
+      DeleteTensorWithID(tensor_id);
+    }
+  }
 }
 
 // Parse tensor from response and get corresponding tensor entry.
@@ -104,7 +117,6 @@ const Tensor& TensorManager::GetTensorFromResponse(const Response& response) {
 const Tensor&
 TensorManager::GetTensor(const int32_t tensor_id, 
                           const int32_t partition_id) const {
-  std::lock_guard<std::mutex> guard(mutex_);
   if (tensor_table_.find(tensor_id) == tensor_table_.end()) {
     assert(false && "GetTensor: TensorTable entry do not exist.");
   }

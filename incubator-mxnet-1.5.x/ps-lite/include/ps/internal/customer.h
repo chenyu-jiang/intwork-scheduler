@@ -86,11 +86,7 @@ class Customer {
    * \brief accept a received message from \ref Van. threadsafe
    * \param recved the received the message
    */
-  inline void Accept(const Message& recved) {
-    accept_task->start();
-    recv_queue_.Push(recved);
-    accept_task->stop();
-  }
+  void Accept(const Message& recved);
 
  private:
   /**

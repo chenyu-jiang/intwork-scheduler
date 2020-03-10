@@ -13,12 +13,9 @@ import collections
 from .bytetask import ByteTask
 from .profiler import Profiler
 
-import bytescheduler.proposed as proposed
-
 import os
 
-def get_random_server(key):
-    return (key * 9973) % proposed.get_world_size()
+
 
 
 class ByteCore(object):
@@ -38,13 +35,16 @@ class ByteCore(object):
         # A priority queue of ByteTask, tasks are sorted according to its priority.
         self._queue = queue.PriorityQueue()
 
+        # Scheduler thread
+        self._scheduler = threading.Thread(target=self._loop, args=())
+        self._scheduler.daemon = True
         self._is_started = False
 
         # DATA represents normal tasks and EXIT signals the scheduler thread to be terminated.
         self._commands = {'DATA': 0, 'EXIT': 1}
 
         # Control credit
-        self._running_lock = threading.Lock()
+        self._condition = threading.Condition(threading.Lock())
 
         # Pending tasks that are not ready
         self._pending = set()
@@ -56,6 +56,7 @@ class ByteCore(object):
 
         # The rank of a worker
         self._rank = None
+        self._world_size = None
 
         # The communication architecture used, e.g., ps or allreduce.
         self._arch = None
@@ -76,7 +77,7 @@ class ByteCore(object):
         self._timeline = os.environ.get('BYTESCHEDULER_TIMELINE', '')
         self._profiler = None
 
-    def start(self, arch):
+    def start(self, rank, world_size, arch):
         """Start core.
         Args:
             rank: the rank of the worker
@@ -85,6 +86,9 @@ class ByteCore(object):
         if self._is_started:
             self._logger.warning("Core is already started.")
             return
+        
+        self._rank = rank
+        self._world_size = world_size
 
         # Setup profiler
         if self._rank == 0 and self._timeline:
@@ -96,12 +100,7 @@ class ByteCore(object):
         assert arch == "ps" or arch == "allreduce", arch + " not supported!"
         self._arch = arch
 
-
-        # Initialize proposed scheduler
-        proposed.init()
-
-        self._rank = proposed.get_rank()
-
+        self._scheduler.start()
         self._is_started = True
 
         self._logger.info(
@@ -121,8 +120,10 @@ class ByteCore(object):
             self._queue.put((sys.maxint, self._commands['EXIT'], None))
         else:
             self._queue.put((-sys.maxint, self._commands['EXIT'], None))
-        with self._running_lock:
+        with self._condition:
             self._credit = sys.maxint
+            self._condition.notify_all()
+        self._scheduler.join()
         self._is_started = False
         self._profiler.stop()
         self._logger.info("shutdown Core {}.".format(self._rank))
@@ -153,7 +154,6 @@ class ByteCore(object):
             if task.tensor_size() > self._partition:
                 subtasks = task.partition(size=self._partition)
             else:
-                task.set_assigned_server(get_random_server(task.id))
                 subtasks = [task]
             
             # print("Tensor {} have {} partitions.".format(task.name, len(subtasks)))
@@ -162,16 +162,15 @@ class ByteCore(object):
             if task.is_immediate():
                 # The callback runs after an immediate task is finished.
                 def _end_callback(t, self):
-                    with self._running_lock:
+                    with self._condition:
                         if t not in self._running:
                             raise RuntimeError("{} not in _running".format(t.desc))
                         self._running.remove(t)
                         self._finished[t.name] = t
-                    # print("[{}] Immediate task {} with op {} finished.".format(proposed.get_rank(), task.name, task.op))
                     self._profiler.put(t.name, t.op + 'COMMUNICATION', 'E')
 
                 for t in subtasks:
-                    with self._running_lock:
+                    with self._condition:
                         self._running.add(t)
                     self._profiler.put(t.name, t.op + 'COMMUNICATION', 'B')
                     t.immediate_do(callback=_end_callback, callback_context=self)
@@ -181,25 +180,61 @@ class ByteCore(object):
             def _start_callback(task, self):
                 with self._pending_lock:
                     self._pending.remove(task)
-                with self._running_lock:
-                    self._running.add(task)
-
-            # The callback runs after an non-immediate task is finished.
-            def _end_callback(task, self):
-                # print("End callback called with tensor {}, id {}.".format(task.name, task.id))
-                with self._running_lock:
-                    if task not in self._running:
-                        raise RuntimeError("{} not in _running".format(task.desc))
-                    self._running.remove(task)
-                    self._finished[task.name] = task
+                self._profiler.put(task.name, task.op + 'QUEUE', 'B')
+                with self._condition:
+                    # print("Putting {} in queue.".format(task.desc))
+                    self._queue.put((task.priority, self._commands['DATA'], task))
+                    self._condition.notify_all()
 
             # Prepare the task, i.e., add dependency Proxies.
             for t in subtasks:
                 with self._pending_lock:
                     self._pending.add(t)
-                t.register_end_callback(callback=_end_callback, callback_context=self)
                 t.prepare(start_callback=_start_callback, start_callback_context=self)
             return True
+
+    def _loop(self):
+        """The main scheduling logic is a while loop that pops a task from queue each time and do it if credit is enough.
+        The credit decreases when a task is running and increases when a task is finished.
+        """
+
+        # The callback runs when a non-immediate task is finished.
+        def _end_callback(task, self):
+            with self._condition:
+                self._credit += task.tensor_size()
+                if self._credit > self._credit_limit:
+                    self._credit = self._credit_limit
+                self._running.remove(task)
+                self._condition.notify_all()
+            self._finished[task.name] = task
+            self._profiler.put(task.name, task.op + 'COMMUNICATION', 'E')
+
+        while True:
+            with self._condition:
+                while True:
+                    try:
+                        priority, cmd, task = self._queue.get(False)
+                    except:
+                        # wait for (potential) new task
+                        self._condition.wait()
+                        continue
+                    if task and self._credit <= 0:
+                        self._queue.put((priority, cmd, task))
+                        # wait for (potential) new credit
+                        self._condition.wait()
+                    else:
+                        break
+
+            if cmd == self._commands['EXIT']:
+                break
+            else:
+                self._profiler.put(task.name, task.op + 'QUEUE', 'E')
+                with self._condition:
+                    self._running.add(task)
+                    self._credit -= task.tensor_size()
+                # print("Calling .do of {}.".format(task.desc))
+                task.do(callback=_end_callback, callback_context=self)
+                self._profiler.put(task.name, task.op + 'COMMUNICATION', 'B')
 
 # Init a core once the module is imported
 core = ByteCore()

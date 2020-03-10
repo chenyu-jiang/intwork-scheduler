@@ -3,7 +3,6 @@ import mxnet as mx
 import logging
 from .kvstore_task import KVStoreTask
 from ..common.bytecore import core
-import bytescheduler.proposed as proposed
 
 
 
@@ -41,9 +40,10 @@ class ScheduledKVStore(mx.kvstore.KVStore):
         self._step = 0
 
         # Start core
-        core.start(arch="ps")
+        core.start(rank=self._kvstore.rank, world_size=self._kvstore.num_workers ,arch="ps")
 
-        self._rank = proposed.get_rank()
+        self._rank = self._kvstore.rank
+        self._num_workers = self._kvstore.num_workers
 
     def __getattr__(self, item):
         return getattr(self._kvstore, item)
@@ -65,6 +65,7 @@ class ScheduledKVStore(mx.kvstore.KVStore):
             immediate=True,
             step=self._step,
             rank=self._rank,
+            num_workers = self._num_workers,
             key_index = self._str_key_int[key]
         )
         core.post(task)
@@ -98,6 +99,7 @@ class ScheduledKVStore(mx.kvstore.KVStore):
                 rank=self._rank,
                 logger=self._logger,
                 ignore_sparse=ignore_sparse,
+                num_workers = self._num_workers,
                 key_index = self._str_key_int[key]
             )
             core.post(task)
@@ -118,6 +120,7 @@ class ScheduledKVStore(mx.kvstore.KVStore):
                 step=self._step,
                 rank=self._rank,
                 ignore_sparse=ignore_sparse,
+                num_workers = self._num_workers,
                 key_index = self._str_key_int[key]
             )
             del self._push_buffer[key]

@@ -1,1 +1,1 @@
-./local_mpi.sh 2 2 python test_kvstore.py
+./local.sh 4 4 python test_kvstore.py

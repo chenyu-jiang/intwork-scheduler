@@ -5,17 +5,16 @@ from abc import ABCMeta, abstractmethod
 from six import with_metaclass
 from threading import Thread, Lock, Condition
 import logging
-import bytescheduler.proposed as proposed
 
 
 class ByteTask(with_metaclass(ABCMeta)):
     """ A unified communication operation (e.g., push, pull, allreduce) abstraction for ALL ML frameworks and
     communication methods."""
 
-    def __init__(self, name, id, tensor, op, 
+    def __init__(self, name, id, tensor, op,
                  priority=0, comm=None, parent=None, max_partition=1000,
-                 add_notify_finish_trigger=False, immediate=False, step=0, partition_index=-1, rank=0,
-                 logger=None, assigned_server = None, **kwargs):
+                 add_notify_finish_trigger=False, immediate=False, step=0, partition_index=-1, rank=0, num_workers=0,
+                 logger=None, **kwargs):
         """ByteTask initialization.
 
         Args:
@@ -81,7 +80,7 @@ class ByteTask(with_metaclass(ABCMeta)):
         self._partition_index = partition_index
         self._step = step
         self._rank = rank
-        self._assigned_server = assigned_server
+        self._num_workers = num_workers
 
         # Logger
         if logger is None:
@@ -105,10 +104,10 @@ class ByteTask(with_metaclass(ABCMeta)):
         """
         self._prepare_callback = start_callback
         self._prepare_callback_context = start_callback_context
-
+        
         if self.children is not None:
             for child in self.children:
-                child.prepare(start_callback, start_callback_context)
+                child.prepare(callback, callback_context)
         else:
             self._prepare()
         
@@ -156,11 +155,6 @@ class ByteTask(with_metaclass(ABCMeta)):
         self._thread = Thread(target=background, args=[self])
         self._thread.start()
 
-    def set_assigned_server(self, asgd_server):
-        if self._assigned_server is not None:
-            raise RuntimeError("Assigned server already set in task {}.".format(self.name))
-        self._assigned_server = asgd_server
-
     def wait_until_finish(self):
         """Block until the task is finished"""
         if self.children is not None:
@@ -202,7 +196,7 @@ class ByteTask(with_metaclass(ABCMeta)):
 
     def is_finished(self):
         """Check if a task is finished.
-       Returns:
+        Returns:
             A boolean value indicating whether the task is finished.
         """
         return self._finished
@@ -217,13 +211,10 @@ class ByteTask(with_metaclass(ABCMeta)):
         self._ready = True
         self._logger.debug(
             "{} is ready".format(self.desc))
+        # print("{} is ready".format(self.desc))
         if self._prepare_callback is not None:
             self._prepare_callback(self, self._prepare_callback_context)
-        if self.parent is not None:
-            parent_ready = self.parent.partition_ready()
-        else:
-            parent_ready = self.partition_ready()
-        return parent_ready
+        return
 
 
     def notify_finish(self):
@@ -232,6 +223,10 @@ class ByteTask(with_metaclass(ABCMeta)):
         Once the communication of a tensor (all-reduce, push or pull) has been finished, the framework engine must
         notify Core about this, so that Core can continue scheduling more tasks.
         """
+        if hasattr(self, "_notify_finish_called"):
+            return
+
+        self._notify_finish_called = True
 
         if self.parent is not None:
             parent_finish = self.parent.partition_done()
@@ -269,43 +264,6 @@ class ByteTask(with_metaclass(ABCMeta)):
         self._done_count_lock.release()
         return finish
 
-    def partition_ready(self):
-        """Called by parent when a task partition is ready.
-        Returns:
-            A boolean value indicating whether all task partitions are ready.
-        """
-        self._ready_count_lock.acquire()
-        self.ready_count += 1
-        self._logger.debug(
-            "{} ready_count = {}".format(self.desc, self.ready_count))
-        finish = False
-        if self.ready_count == self.partition_count:
-            finish = True
-            self.post_to_proposed()
-
-        self._ready_count_lock.release()
-        return finish
-
-    def post_to_proposed(self):
-        cbs = []
-        if self.children is not None:
-            for sub_task in self.children:
-                def this_cb(t = sub_task, na=sub_task.name, id=sub_task.id):
-                    t.do(t.end_callback, t.end_callback_context)
-                cbs.append(this_cb)
-            # print("[{}] Posting {} to proposed scheduler.".format(proposed.get_rank(),self.desc))
-            proposed.post_tensor(self.id, cbs, self.priority)
-        else:
-            def this_cb(t = self, na=self.name, id=self.id):
-                t.do(t.end_callback, t.end_callback_context)
-            cbs.append(this_cb)
-            # print("[{}] Posting small tensor {} to proposed scheduler with op {}, assigned server {}.".format(proposed.get_rank(), self.name, self.op, self._assigned_server))
-            proposed.post_tensor(self.id, cbs, self.priority, assigned_server=self._assigned_server)
-
-    def register_end_callback(self, callback = None, callback_context=None):
-        self.end_callback = callback
-        self.end_callback_context= callback_context
-
     def tensor_size(self):
         """Get the tensor size, i.e., the number of parameters of one tensor of the task
         Returns:
@@ -338,35 +296,46 @@ class ByteTask(with_metaclass(ABCMeta)):
 
         # Partition tasks evenly or based on a list
         if isinstance(size, list):
-            tensor_partitions = self._partition_tensor_v2(size, num_workers=proposed.get_world_size())
+            tensor_partitions = self._partition_tensor_v2(size, num_workers=self._num_workers)
         else:
-            tensor_partitions = self._partition_tensor(size, num_workers=proposed.get_world_size())
+            tensor_partitions = self._partition_tensor(size, num_workers=self._num_workers)
+
+        # Assign execution units
+
+        num_units = len(tensor_partitions) // self._num_workers
+
+        execution_units = []
+        for unit_id in range(num_units):
+            unit_tensors = []
+            for step_id in range(self._num_workers):
+                unit_tensors.append( tensor_partitions[ unit_id*self._num_workers + (step_id+self._rank) % self._num_workers ])
+            execution_units.append(unit_tensors)
         
         self.children = []
-        for i in range(len(tensor_partitions)):
-            self.children.append(
+        for i in range(num_units):
+            self.children.append (
                 self.__class__(
-                    self.name + "_" + str(i),
+                    self.name + "_eu_" + str(i),
                     self.id,
-                    tensor_partitions[i],
+                    execution_units[i],
                     self.op,
-                    priority=(self.priority * self.max_partition + i),
+                    priority=(self.priority * self.max_partition - i*self._num_workers),
                     comm=self._comm,
                     parent=self,
                     add_notify_finish_trigger=self._add_notify_finish_trigger,
                     immediate=self._immediate,
                     step=self._step,
-                    partition_index=i,
+                    partition_index=i*self._num_workers,
                     rank=self._rank,
+                    num_workers=self._num_workers,
                     logger=self._logger,
-                    assigned_server = i % proposed.get_world_size(),
                     **self.kwargs
                 )
             )
         
         self.partition_count = len(tensor_partitions)
         self._logger.debug(
-            "{} is partitioned into {}".format(self.desc, len(tensor_partitions)))
+            "{} is partitioned into {} eus.".format(self.desc, len(tensor_partitions)))
         return self.children
 
     @abstractmethod

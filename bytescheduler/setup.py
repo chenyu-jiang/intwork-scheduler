@@ -484,7 +484,7 @@ setup(
     python_requires=REQUIRES_PYTHON,
     url=URL,
     packages=find_packages(exclude=('tests',)),
-    package_data = {"proposed": ["bytescheduler/proposed/build/libproposed.so"]},
+    # package_data = {"proposed": ["bytescheduler/proposed/build/libproposed.so"]},
     install_requires=REQUIRED,
     extras_require=EXTRAS,
     include_package_data=True,
@@ -502,7 +502,7 @@ setup(
     ext_modules=[mxnet_lib, pytorch_lib],
     # $ setup.py publish support.
     cmdclass={
-        'install': custom_install,
+        # 'install': custom_install,
         'upload': UploadCommand,
         'build_ext': custom_build_ext
     },

@@ -596,10 +596,8 @@ class KVStoreDistServer {
                               ps::KVServer<char>* server) {
     auto &updates = update_buf_[key];
     if(!sync_mode_ || updates.update_finished) {
-      // std::cout << "Directly sending values." << std::endl;
       SendPullResponses(type, key, req_meta, req_data, server);
     } else {
-      // std::cout << "Delaying sending values." << std::endl;
       updates.request.push_back(req_meta);
       updates.req_data.push_back(req_data);
     }

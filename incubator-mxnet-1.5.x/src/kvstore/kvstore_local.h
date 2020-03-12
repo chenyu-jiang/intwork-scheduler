@@ -133,7 +133,7 @@ class KVStoreLocal : public KVStore {
             << "duplicate init of key " << str_key;
       auto key = next_str_key_++;
       str_key_dict_[str_key] = key;
-
+      // std::cout << "Encoded str key " + str_key + " as " + std::to_string(key) << std::endl; 
       // record reverse mapping from int to string
       reverse_str_key_dict_[key] = str_key;
       keys[i] = key;
@@ -143,6 +143,7 @@ class KVStoreLocal : public KVStore {
       CHECK(server_assignment_dict_.find(key) == server_assignment_dict_.end())
             << "duplicate init of server assignment of key " << str_key;
       server_assignment_dict_[key] = assigned_servers[i];
+      // std::cout << "Assigned key " + std::to_string(key) + " to server " + std::to_string(assigned_servers[i]) << std::endl; 
     }
     InitImpl(keys, values);
   }
@@ -157,6 +158,8 @@ class KVStoreLocal : public KVStore {
             << "duplicate init of key " << str_key;
       auto key = next_str_key_++;
       str_key_dict_[str_key] = key;
+      // std::cout << "Encoded str key " + str_key + " as " + std::to_string(key) << std::endl; 
+      // std::cout << "Using random assignment for key " + std::to_string(key) << std::endl; 
       // record reverse mapping from int to string
       reverse_str_key_dict_[key] = str_key;
       keys[i] = key;

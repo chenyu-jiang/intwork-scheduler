@@ -12,7 +12,7 @@ class ByteTask(with_metaclass(ABCMeta)):
     communication methods."""
 
     def __init__(self, name, id, tensor, op,
-                 priority=0, comm=None, parent=None, max_partition=1000,
+                 priority=0, comm=None, parent=None, max_partition=10000,
                  add_notify_finish_trigger=False, immediate=False, step=0, partition_index=-1, rank=0, num_workers=0,
                  logger=None, **kwargs):
         """ByteTask initialization.
@@ -223,10 +223,10 @@ class ByteTask(with_metaclass(ABCMeta)):
         Once the communication of a tensor (all-reduce, push or pull) has been finished, the framework engine must
         notify Core about this, so that Core can continue scheduling more tasks.
         """
-        if hasattr(self, "_notify_finish_called"):
-            return
-
-        self._notify_finish_called = True
+        with self._lock_before_finish:
+            if hasattr(self, "_notify_finish_called"):
+                return
+            self._notify_finish_called = True
 
         if self.parent is not None:
             parent_finish = self.parent.partition_done()
@@ -319,7 +319,7 @@ class ByteTask(with_metaclass(ABCMeta)):
                     self.id,
                     execution_units[i],
                     self.op,
-                    priority=(self.priority * self.max_partition - i*self._num_workers),
+                    priority=(self.priority * self.max_partition + i*self._num_workers*10),
                     comm=self._comm,
                     parent=self,
                     add_notify_finish_trigger=self._add_notify_finish_trigger,

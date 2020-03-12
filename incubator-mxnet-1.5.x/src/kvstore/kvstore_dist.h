@@ -192,7 +192,7 @@ class KVStoreDist : public KVStoreLocal {
       comm_->Init(keys[i], values[i].storage_type(), values[i].shape(), values[i].dtype());
     }
     if (get_rank() == 0 && this->ps_worker_->get_customer()->customer_id() == 0) {
-      Push_(keys, values, 0, false);
+      Push_(keys, values, 1000000, false);
       // wait until the push is finished
       for (const int key : keys) {
         comm_buf_[key].WaitToWrite();
@@ -544,7 +544,10 @@ class KVStoreDist : public KVStoreLocal {
 
       if (server_assignment_type_dict_[key] == kSpecifiedAssignment) {
         // send it to the specified server
+        mu_.lock();
         int server = server_assignment_dict_[key];
+        // std::cout << "Assigned key " + std::to_string(key) + " to server " + std::to_string(server) << std::endl;
+        mu_.unlock();
         ps::Key ps_key = krs[server].begin() + key;
         CHECK_LT(ps_key, krs[server].end());
         pskv.keys.push_back(ps_key);
@@ -552,6 +555,7 @@ class KVStoreDist : public KVStoreLocal {
         pskv.lens.push_back(total_bytes);
         pskv.size = total_bytes;
       } else {
+        // std::cout << "Unspecified server assignment for key " + std::to_string(key) + " ." << std::endl;
         // a simple heuristic for load balance
         if (num_arr_elems < bigarray_bound_) {
           // send it to a single random picked server

@@ -478,6 +478,7 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& 
   }
   obj_->AddResponse(timestamp, skipped);
   if ((size_t)skipped == sliced.size()) {
+    // std::cout << "Triggered cb without sending with push "  + std::to_string(push)<< std::endl;
     RunCallback(timestamp);
   }
 
@@ -525,6 +526,9 @@ void KVWorker<Val>::Process(const Message& msg) {
     recv_kvs_[ts].push_back(kvs);
     mu_.unlock();
   }
+  // if (!msg.meta.push && !msg.data.size()) {
+  //   printf("Received empty non-push response, \n");
+  // }
 
   // finished, run callbacks
   if (obj_->NumResponse(ts) == Postoffice::Get()->num_servers() - 1)  {

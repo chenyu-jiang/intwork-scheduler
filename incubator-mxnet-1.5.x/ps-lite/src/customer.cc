@@ -72,18 +72,18 @@ void Customer::Accept(const Message& recved) {
   recv_queue_.Push(recved);
   // std::cout << "Data size: " + std::to_string(recved.data.size()) << std::endl;
   accept_task->stop();
-  // if(Postoffice::Get()->is_server() && recved.meta.push) {
-  // // construct response
-  //   Message msg;
-  //   msg.meta.app_id = app_id();
-  //   msg.meta.customer_id = recved.meta.customer_id;
-  //   msg.meta.request     = false;
-  //   msg.meta.push        = recved.meta.push;
-  //   msg.meta.head        = recved.meta.head;
-  //   msg.meta.timestamp   = recved.meta.timestamp;
-  //   msg.meta.recver      = recved.meta.sender;
-  //   Postoffice::Get()->van()->Send(msg);
-  // }
+  if(Postoffice::Get()->is_server() && recved.meta.push) {
+    // construct response
+    Message msg;
+    msg.meta.app_id = app_id();
+    msg.meta.customer_id = recved.meta.customer_id;
+    msg.meta.request     = false;
+    msg.meta.push        = recved.meta.push;
+    msg.meta.head        = recved.meta.head;
+    msg.meta.timestamp   = recved.meta.timestamp;
+    msg.meta.recver      = recved.meta.sender;
+    Postoffice::Get()->van()->Send(msg);
+  }
 }
 
 }  // namespace ps

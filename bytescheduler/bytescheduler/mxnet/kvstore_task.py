@@ -63,7 +63,7 @@ class KVStoreTask(ByteTask):
             elif self.op == "push":
                 self._comm.push(self.name, tensor, -self.priority)
             elif self.op == "pull":
-                self._comm.pull(self.name, out=tensor, priority=-self.priority, ignore_sparse=self.kwargs["ignore_sparse"])
+                self._comm.pull(self.name, out=tensor, priority=-self.priority - 1, ignore_sparse=self.kwargs["ignore_sparse"])
             elif self.op == "push_pull":
                 assert len(tensor) == 2
                 self._comm.push(self.name, tensor[0], -self.priority)
@@ -85,14 +85,17 @@ class KVStoreTask(ByteTask):
                 push_tensors_out = (NDArrayHandle * len(push_avatar))(*push_avatar)
 
                 check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_op(
-                    push_tensors_out, 0, push_tensors_out, len(push_avatar), self._push_completion_callback, 10000000-self.priority))
+                    push_tensors_out, 0, push_tensors_out, len(push_avatar), self._push_completion_callback, 100000000-self.priority))
 
-                self._comm.pull(self.name, out=tensor[1], priority=-self.priority, ignore_sparse=self.kwargs["ignore_sparse"])
+                self._comm.pull(self.name, out=tensor[1], priority=-self.priority-1, ignore_sparse=self.kwargs["ignore_sparse"])
             else:
                 self._logger.error("ERROR: unexpected op type {}!".format(self.op))
         else:
+            def map2pid(step_id):
+                return (step_id + self._rank) % self._num_workers
+
             def tensor_key(step_id):
-                return self.name + "_" + str((step_id + self._rank) % self._num_workers)
+                return self.name + "_" + str(map2pid(step_id))
 
             def unmap(partition_id):
                 return (partition_id + self._num_workers - self._rank) % self._num_workers
@@ -101,23 +104,26 @@ class KVStoreTask(ByteTask):
                 # for init, rotate the tensors back to the normal order
                 for partition_id in range(len(tensor)):
                     step_id = unmap(partition_id)
+                    # print("BS: assigned server {} to {}.".format(partition_id, tensor_key(step_id)))
                     if isinstance(tensor[step_id], (tuple, list)):
                         self._comm.init(tensor_key(step_id), tensor[step_id], server_assigned = [partition_id]*len(tensor[step_id]))
+                        # self._comm.init(tensor_key(step_id), tensor[step_id])
                     else:
                         self._comm.init(tensor_key(step_id), tensor[step_id], server_assigned = partition_id)
+                        # self._comm.init(tensor_key(step_id), tensor[step_id])
             elif self.op == "push":
                 for step_id in range(len(tensor)):
                     # print("Pushing {} with value {}.".format(tensor_key(step_id), tensor[step_id]))
-                    self._comm.push(tensor_key(step_id), tensor[step_id], -self.priority + step_id)
+                    self._comm.push(tensor_key(step_id), tensor[step_id], -self.priority - map2pid(step_id)*10)
             elif self.op == "pull":
                 for step_id in range(len(tensor)):
-                    self._comm.pull(tensor_key(step_id), out=tensor[step_id], priority=-self.priority + step_id, ignore_sparse=self.kwargs["ignore_sparse"])
+                    self._comm.pull(tensor_key(step_id), out=tensor[step_id], priority=-self.priority - map2pid(step_id)*10 - 1, ignore_sparse=self.kwargs["ignore_sparse"])
             elif self.op == "push_pull":
                 for step_id in range(len(tensor)):
                     assert len(tensor[step_id]) == 2
                     step_tensor = tensor[step_id]
-                    # print("[{}] Pushing {} with value {}.".format(self._rank, tensor_key(step_id), step_tensor[0]))
-                    self._comm.push(tensor_key(step_id), step_tensor[0], -self.priority + step_id)
+                    # print("[{}] Pushing {} with priority {}.".format(self._rank, tensor_key(step_id), -self.priority - map2pid(step_id)*10))
+                    self._comm.push(tensor_key(step_id), step_tensor[0], -self.priority - map2pid(step_id)*10)
 
 
                     push_avatar = [t.handle for t in step_tensor[0]] if isinstance(step_tensor[0], (tuple, list)) else [step_tensor[0].handle]
@@ -132,13 +138,14 @@ class KVStoreTask(ByteTask):
                             check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_on_complete(
                                 c_void_p(on_complete)))
                             # Called after push instead pull
+                            # print("{} finished.".format(self.desc))
                             self.notify_finish()
 
                         # Avoid garbage collection
                         self._push_completion_callback = callback_t(push_completion_callback)
 
                         check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_op(
-                            push_tensors_out, 0, push_tensors_out, len(push_avatar), self._push_completion_callback, 10000000-self.priority))
+                            push_tensors_out, 0, push_tensors_out, len(push_avatar), self._push_completion_callback, 100000000-self.priority))
                     else:
                         # add dependency between push ops
                         next_push_avatar = [t.handle for t in tensor[step_id+1][0]] if isinstance(tensor[step_id+1][0], (tuple, list)) else [tensor[step_id+1][0].handle]
@@ -147,8 +154,8 @@ class KVStoreTask(ByteTask):
                                     push_tensors_out, len(push_avatar),
                                     next_push_avatar_out, len(next_push_avatar),
                                     100000000 - self.priority + step_id))
-
-                    self._comm.pull(tensor_key(step_id), out=step_tensor[1], priority=-self.priority + step_id, ignore_sparse=self.kwargs["ignore_sparse"])
+                    # print("[{}] Pulling {} with priority {}.".format(self._rank, tensor_key(step_id), -self.priority - map2pid(step_id)*10 -1))
+                    self._comm.pull(tensor_key(step_id), out=step_tensor[1], priority=-self.priority - map2pid(step_id) - 1, ignore_sparse=self.kwargs["ignore_sparse"])
             else:
                 self._logger.error("ERROR: unexpected op type {}!".format(self.op))
 
@@ -235,8 +242,8 @@ class KVStoreTask(ByteTask):
     def _post_push_pull_barrier(self, avatar):
         if self.op == "push_pull":
             # push barrier and write dependency on barrier tensor and avatar with highest priority
-            self._comm.push(self._barrier_key, self._barrier_tensor, 10000000-self.priority)
-            self._comm.pull(self._barrier_key, out=self._barrier_tensor, priority = 10000000-self.priority)
+            self._comm.push(self._barrier_key, self._barrier_tensor, 100000000-self.priority)
+            self._comm.pull(self._barrier_key, out=self._barrier_tensor, priority = 100000000-self.priority)
             deps = [self._barrier_tensor.handle] + avatar
             barrier_tensors_out = (NDArrayHandle * len(deps))(*deps)
             check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_barrier(
@@ -308,11 +315,11 @@ class KVStoreTask(ByteTask):
         if self.op == "push_pull":
             tensor_out = (NDArrayHandle * 1)(*[self._barrier_tensor.handle])
             check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_op(
-                tensor_out, 0, tensor_out, 1, self._mxnet_start_callback, 10000000-self.priority))
+                tensor_out, 0, tensor_out, 1, self._mxnet_start_callback, 100000000-self.priority))
         else:
             tensor_out = (NDArrayHandle * len(avatar))(*avatar)
             check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_op(
-                tensor_out, 0, tensor_out, len(avatar), self._mxnet_start_callback, 10000000-self.priority))
+                tensor_out, 0, tensor_out, len(avatar), self._mxnet_start_callback, 100000000-self.priority))
 
     def _post_end_op(self, avatar):
         """The end op is only for notifying the Core about task finishing. It does not add any dependency to the
@@ -329,7 +336,7 @@ class KVStoreTask(ByteTask):
         # post end op
         tensor_out = (NDArrayHandle * len(avatar))(*avatar)
         check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_op(
-            tensor_out, 0, tensor_out, len(avatar), self._mxnet_end_callback, 10000000-self.priority))
+            tensor_out, 0, tensor_out, len(avatar), self._mxnet_end_callback, 100000000-self.priority))
 
     def _post_end_barrier(self, avatar, real):
         """The end barrier is for keeping the original dependency. It does not need any callback."""
@@ -339,7 +346,7 @@ class KVStoreTask(ByteTask):
             check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_barrier(
                 barrier_tensors_out, 0,
                 barrier_tensors_out, len(deps),
-                10000000-self.priority))
+                100000000-self.priority))
         else:
             # _child_tensors is a list of avatar, and avatar itself is also a list
             if not hasattr(self.parent, "_children_tensors"):
@@ -353,7 +360,7 @@ class KVStoreTask(ByteTask):
                 check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_barrier(
                     barrier_tensors_in, len(tensors_in),
                     barrier_tensors_out, len(real),
-                    10000000-self.priority))
+                    100000000-self.priority))
 
     def _tensor_size(self):
         """Returns the size of one tensor of the task"""

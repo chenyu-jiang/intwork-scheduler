@@ -36,7 +36,7 @@ def _ctype_key_value(keys, vals, server_assigned = None):
     For internal use only.
     """
     if isinstance(keys, (tuple, list)):
-        if server_assigned:
+        if server_assigned is not None:
             assert(len(keys) == len(vals) == len(server_assigned))
             c_keys = []
             c_vals = []
@@ -76,7 +76,7 @@ def _ctype_key_value(keys, vals, server_assigned = None):
     if isinstance(vals, NDArray):
         c_keys = c_str_array([keys]) if use_str_keys \
                 else c_array_buf(ctypes.c_int, array('i', [keys]))
-        if server_assigned:
+        if server_assigned is not None:
             if not isinstance(server_assigned, int):
                 raise RuntimeError("Assigned server must be an integer, but got {}.".format(server_assigned))
             c_servers = c_array_buf(ctypes.c_int, array("i", [server_assigned]))
@@ -88,7 +88,7 @@ def _ctype_key_value(keys, vals, server_assigned = None):
             assert(isinstance(value, NDArray))
         c_keys = c_str_array([keys] * len(vals)) if use_str_keys \
                  else c_array_buf(ctypes.c_int, array('i', [keys] * len(vals)))
-        if server_assigned:
+        if server_assigned is not None:
             assert(len(vals) == len(server_assigned)), "Assigned server length mismatch."
             c_servers = c_array_buf(ctypes.c_int, array("i", server_assigned))
         else:

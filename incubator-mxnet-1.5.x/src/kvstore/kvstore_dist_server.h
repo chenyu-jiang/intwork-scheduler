@@ -192,9 +192,9 @@ class KVStoreDistServer {
   struct UpdateBuf { 
     // Modification: instead of push, request now stores pull requests.
     std::vector<ps::KVMeta> request;
-    std::vector<ps::KVPairs<char>> req_data;
+    std::vector<ps::SArray<ps::Key>> req_keys;
     int32_t push_count = 0;
-    bool update_finished = true;
+    bool update_finished = false;
     NDArray merged;
     // temp_array is used to cast received values as float32 for computation if required
     NDArray temp_array;
@@ -350,6 +350,7 @@ class KVStoreDistServer {
   inline void ApplyUpdates(const DataHandleType type, const int key,
                            UpdateBuf *update_buf, ps::KVServer<char>* server) {
     if (!sync_mode_ || update_buf->push_count == (size_t) ps::NumWorkers()) {
+    // if (!sync_mode_ || update_buf->request.size() == (size_t) ps::NumWorkers()) {
       // let the main thread to execute updater_, which is necessary for python
       auto& stored = has_multi_precision_copy(type) ? store_realt_[key] : store_[key];
       auto& update =  sync_mode_ ? update_buf->merged : update_buf->temp_array;
@@ -368,17 +369,28 @@ class KVStoreDistServer {
       //   server->Response(req);
       // }
       if (has_multi_precision_copy(type)) CopyFromTo(stored, store_[key]);
-      stored.WaitToRead();
+
       int32_t num_pull_reqs = update_buf->request.size();
-      // std::cout << "Sending pulls to " + std::to_string(num_pull_reqs) + " workers." << std::endl;
-      for(int32_t req_id=0; req_id<num_pull_reqs; req_id++) {
-        SendPullResponses(type, key, update_buf->request[req_id], 
-                          update_buf->req_data[req_id], server);
+      if (num_pull_reqs != 0) {
+        ps::KVPairs<char> response;
+        // std::cout << "Sending pull of key " + std::to_string(key) << std::endl;
+        // as server returns when store_realt is ready in this case
+        stored.WaitToRead();
+        auto len = stored.shape().Size() * mshadow::mshadow_sizeof(stored.dtype());
+        response.lens = {len};
+        // TODO(mli) try to remove this CopyFrom
+        response.vals.CopyFrom(static_cast<const char*>(stored.data().dptr_), len);
+        for(int32_t req_id=0; req_id<num_pull_reqs; req_id++) {
+          response.keys = update_buf->req_keys[req_id];
+          server->Response(update_buf->request[req_id], response);
+        }
       }
+      // std::cout << "Sending pulls to " + std::to_string(num_pull_reqs) + " workers." << std::endl;
       update_buf->request.clear();
-      update_buf->req_data.clear();
+      update_buf->req_keys.clear();
       update_buf->update_finished = true;
       update_buf->push_count = 0;
+      stored.WaitToRead();
     } else {
       update_buf->merged.WaitToRead();
     }
@@ -599,7 +611,7 @@ class KVStoreDistServer {
       SendPullResponses(type, key, req_meta, req_data, server);
     } else {
       updates.request.push_back(req_meta);
-      updates.req_data.push_back(req_data);
+      updates.req_keys.push_back(req_data.keys);
     }
   }
 
@@ -611,12 +623,13 @@ class KVStoreDistServer {
       ps::KVPairs<char> response;
       const NDArray& stored = store_[key];
       CHECK(!stored.is_none()) << "init " << key << " first";
-
+      // std::cout << "Sending pull of key " + std::to_string(key) << std::endl;
       // as server returns when store_realt is ready in this case
       if (has_multi_precision_copy(type)) stored.WaitToRead();
 
       auto len = stored.shape().Size() * mshadow::mshadow_sizeof(stored.dtype());
       response.keys = req_data.keys;
+      // std::cout << "response.keys size: " + std::to_string(response.keys.size()) << std::endl;
       response.lens = {len};
       // TODO(mli) try to remove this CopyFrom
       response.vals.CopyFrom(static_cast<const char*>(stored.data().dptr_), len);
@@ -719,14 +732,35 @@ class KVStoreDistServer {
         stored = NDArray(dshape, Context(), false,
                          has_multi_precision_copy(type) ? mshadow::kFloat32 : type.dtype);
         CopyFromTo(recved, &stored, 0);
-        server->Response(req_meta);
+        auto &updates = update_buf_[key];
+        updates.update_finished = true;
+        // server->Response(req_meta);
         if (has_multi_precision_copy(type)) {
           auto& stored_dtype = store_[key];
           stored_dtype = NDArray(dshape, Context(), false, type.dtype);
           CopyFromTo(stored, stored_dtype);
           stored_dtype.WaitToRead();
         }
-        stored.WaitToRead();
+        int32_t num_pull_reqs = updates.request.size();
+        if (num_pull_reqs != 0) {
+          ps::KVPairs<char> response;
+          // std::cout << "Sending pull of key " + std::to_string(key) << std::endl;
+          // as server returns when store_realt is ready in this case
+          stored.WaitToRead();
+          auto len = stored.shape().Size() * mshadow::mshadow_sizeof(stored.dtype());
+          response.lens = {len};
+          // TODO(mli) try to remove this CopyFrom
+          response.vals.CopyFrom(static_cast<const char*>(stored.data().dptr_), len);
+          for(int32_t req_id=0; req_id<num_pull_reqs; req_id++) {
+            response.keys = updates.req_keys[req_id];
+            // std::cout << "response.keys size: " + std::to_string(response.keys.size()) << std::endl;
+            server->Response(updates.request[req_id], response);
+          }
+          updates.request.clear();
+          updates.req_keys.clear();
+        } else {
+          stored.WaitToRead();
+        }
       } else {
         auto &updates = update_buf_[key];
         if (sync_mode_ && updates.merged.is_none()) {
@@ -737,6 +771,7 @@ class KVStoreDistServer {
           updates.temp_array = NDArray(dshape, Context(), false, mshadow::kFloat32);
         }
         if (updates.push_count == 0) {
+        // if (updates.request.empty()) {
           if (sync_mode_) {
             updates.update_finished = false;
             CopyFromTo(recved, updates.merged);
@@ -758,7 +793,7 @@ class KVStoreDistServer {
         }
         // Modification: send response here
         // std::cout << "Push finished for key: " + std::to_string(key) + "." << std::endl;
-        server->Response(req_meta);
+        // server->Response(req_meta);
         updates.push_count ++;
         // updates.request.push_back(req_meta);
         ApplyUpdates(type, key, &updates, server);

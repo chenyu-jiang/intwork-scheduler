@@ -10,6 +10,7 @@ except ImportError:
 import threading
 import logging
 import collections
+from .tuner import Tuner
 from .bytetask import ByteTask
 from .profiler import Profiler
 
@@ -73,6 +74,17 @@ class ByteCore(object):
         self._first_key = None
         self._step = 0
 
+        # Tuning
+        self._credit_tuning = int(os.environ.get('BYTESCHEDULER_CREDIT_TUNING', 1))
+        self._partition_tuning = int(os.environ.get('BYTESCHEDULER_PARTITION_TUNING', 0))
+        self._tuner = None
+
+        # hyper parameters of auto-tuning.
+        self._current_point = {
+            "credit": self._credit,
+        }
+        self._next_point = None
+
         # profiling
         self._timeline = os.environ.get('BYTESCHEDULER_TIMELINE', '')
         self._profiler = None
@@ -100,6 +112,16 @@ class ByteCore(object):
         assert arch == "ps" or arch == "allreduce", arch + " not supported!"
         self._arch = arch
 
+        # Support tuning partition for allreduce
+        if self._partition_tuning:
+            assert arch == "allreduce", "Do not support partition tuning for ps."
+            self._current_point["partition"] = self._partition
+
+        if (rank == 0 and self._credit_tuning) or self._partition_tuning:
+            self._tuner = Tuner(rank=self._rank, arch=arch, credit_tuning=self._credit_tuning,
+                                partition_tuning=self._partition_tuning, logger=self._logger)
+
+
         self._scheduler.start()
         self._is_started = True
 
@@ -125,6 +147,7 @@ class ByteCore(object):
             self._condition.notify_all()
         self._scheduler.join()
         self._is_started = False
+        self._tuner.exit()
         self._profiler.stop()
         self._logger.info("shutdown Core {}.".format(self._rank))
 
@@ -149,11 +172,14 @@ class ByteCore(object):
                 self._first_key = task.name
             if self._first_key == task.name:
                 self._step += 1
+                if self._tuner:
+                    self._tune()
 
             # Partition a task if its tensor is larger than a threshold.
             if task.tensor_size() > self._partition:
                 subtasks = task.partition(size=self._partition)
             else:
+                task.priority = task.priority*10
                 subtasks = [task]
             
             # print("Tensor {} have {} partitions.".format(task.name, len(subtasks)))
@@ -232,9 +258,35 @@ class ByteCore(object):
                 with self._condition:
                     self._running.add(task)
                     self._credit -= task.tensor_size()
-                # print("Calling .do of {}.".format(task.desc))
+                # print("Starting {} with size {}.".format(task.desc, task.tensor_size()))
                 task.do(callback=_end_callback, callback_context=self)
                 self._profiler.put(task.name, task.op + 'COMMUNICATION', 'B')
 
+    def _tune(self):
+        if self._tuner.stopped and self._next_point is None:
+            self._tuner.exit()
+            return
+        # Only rank 0 runs auto-tuning algorithm
+        if self._rank == 0:
+            self._tuner.record(self._current_point, self._step)
+        if self._next_point is None:
+            self._next_point = self._tuner.next_point()
+        if self._next_point is not None and self._step == self._next_point["step"]:
+            with self._condition:
+                if "credit" in self._next_point:
+                    self._credit_limit = self._next_point["credit"]
+                    self._credit = self._next_point["credit"]
+                    # self._logger.info("core {}: autotuning sets credit to {}K at training step {}.".format(
+                    #         self._rank, int(self._credit / 1000), self._step))
+                    print("core {}: autotuning sets credit to {}K at training step {}.".format(
+                            self._rank, int(self._credit / 1000), self._step))
+                if "partition" in self._next_point:
+                    self._partition_unit = self._next_point["partition"]
+                    self._logger.info("core {}: autotuning sets partition to {}K at training step {}.".format(
+                            self._rank, int(self._partition / 1000), self._step))
+                self._current_point = self._next_point
+                self._next_point = None
+
 # Init a core once the module is imported
 core = ByteCore()
+print("Currently using modified bytescheduler.")

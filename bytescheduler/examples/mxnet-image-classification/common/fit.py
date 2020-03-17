@@ -223,8 +223,14 @@ def fit(args, network, data_loader, **kwargs):
     # devs = mx.cpu() if args.gpus is None or args.gpus == "" else [
     #     mx.gpu(int(i)) for i in args.gpus.split(',')]
 
-    devs = mx.cpu() if args.gpus is None or args.gpus == "" else [
-        mx.gpu(int(args.gpus.split(',')[kv.rank]))]
+    if args.gpus is None or args.gpus == "":
+        devs = mx.cpu()
+    else:
+        gpu_list = args.gpus.split(',')
+        if len(gpu_list) == 1:
+            devs = [mx.gpu(int(gpu_list[0]))]
+        else:
+            devs = [mx.gpu(int(gpu_list[kv.rank]))]
 
     # learning rate
     lr, lr_scheduler = _get_lr_scheduler(args, kv)

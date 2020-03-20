@@ -2282,7 +2282,8 @@ MXNET_DLL int MXKVStoreInit(KVStoreHandle handle,
                             mx_uint num,
                             const int* keys,
                             NDArrayHandle* vals,
-                            const int* assigned_servers = NULL);
+                            const int* assigned_servers = NULL,
+                            int is_barrier = 0);
 
 /*!
  * \brief Init a list of (key,value) pairs in kvstore, where each key is a string
@@ -2296,7 +2297,8 @@ MXNET_DLL int MXKVStoreInitEx(KVStoreHandle handle,
                               mx_uint num,
                               const char** keys,
                               NDArrayHandle* vals,
-                              const int* assigned_servers = NULL);
+                              const int* assigned_servers = NULL,
+                              int is_barrier = 0);
 
 /*!
  * \brief Push a list of (key,value) pairs to kvstore
@@ -2311,7 +2313,9 @@ MXNET_DLL int MXKVStorePush(KVStoreHandle handle,
                             mx_uint num,
                             const int* keys,
                             NDArrayHandle* vals,
-                            int priority);
+                            int priority,
+                            int is_barrier,
+                            int is_small_tensor);
 /*!
  * \brief Push a list of (key,value) pairs to kvstore, where each key is a string
  * \param handle handle to the kvstore
@@ -2325,7 +2329,9 @@ MXNET_DLL int MXKVStorePushEx(KVStoreHandle handle,
                               mx_uint num,
                               const char** keys,
                               NDArrayHandle* vals,
-                              int priority);
+                              int priority,
+                              int is_barrier,
+                              int is_small_tensor);
 /*!
  * \brief pull a list of (key, value) pairs from the kvstore
  * \param handle handle to the kvstore

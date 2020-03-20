@@ -7,6 +7,7 @@
 #include <limits>
 #include <string>
 #include <sstream>
+#include <chrono>
 #include "ps/sarray.h"
 namespace ps {
 /** \brief data type */
@@ -139,7 +140,7 @@ struct Meta {
   /** \brief default constructor */
   Meta() : head(kEmpty), app_id(kEmpty), customer_id(kEmpty),
            timestamp(kEmpty), sender(kEmpty), recver(kEmpty),
-           request(false), push(false), simple_app(false) {}
+           request(false), push(false), simple_app(false), priority(0), is_barrier(false) {}
   std::string DebugString() const {
     std::stringstream ss;
     if (sender == Node::kEmpty) {
@@ -193,6 +194,8 @@ struct Meta {
   Control control;
   /** \brief server side priority */
   int priority;
+  bool is_barrier;
+  bool is_small_tensor;
 };
 /**
  * \brief messages that communicated amaong nodes.
@@ -220,6 +223,7 @@ struct Message {
     }
     return ss.str();
   }
+  std::chrono::nanoseconds recvd_time;
 };
 }  // namespace ps
 #endif  // PS_INTERNAL_MESSAGE_H_

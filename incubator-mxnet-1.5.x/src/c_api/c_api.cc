@@ -892,7 +892,8 @@ int MXKVStoreInit(KVStoreHandle handle,
                   mx_uint num,
                   const int* keys,
                   NDArrayHandle* vals,
-                  const int* assigned_servers /*= NULL*/) {
+                  const int* assigned_servers, /*= NULL*/
+                  int is_barrier) {
   API_BEGIN();
   std::vector<int> v_keys(num);
   std::vector<NDArray> v_vals(num);
@@ -904,9 +905,9 @@ int MXKVStoreInit(KVStoreHandle handle,
       v_assigned_servers[i] = assigned_servers[i];
   }
   if (assigned_servers != NULL) 
-    static_cast<KVStore*>(handle)->Init(v_keys, v_vals, v_assigned_servers);
+    static_cast<KVStore*>(handle)->Init(v_keys, v_vals, v_assigned_servers, is_barrier);
   else
-    static_cast<KVStore*>(handle)->Init(v_keys, v_vals);
+    static_cast<KVStore*>(handle)->Init(v_keys, v_vals, is_barrier);
   API_END();
 }
 
@@ -914,7 +915,8 @@ int MXKVStoreInitEx(KVStoreHandle handle,
                   mx_uint num,
                   const char** keys,
                   NDArrayHandle* vals,
-                  const int* assigned_servers /*= NULL*/) {
+                  const int* assigned_servers, /*= NULL*/
+                  int is_barrier) {
   API_BEGIN();
   std::vector<std::string> v_keys(num);
   std::vector<NDArray> v_vals(num);
@@ -926,9 +928,9 @@ int MXKVStoreInitEx(KVStoreHandle handle,
       v_assigned_servers[i] = assigned_servers[i];
   }
   if (assigned_servers != NULL)
-    static_cast<KVStore*>(handle)->Init(v_keys, v_vals, v_assigned_servers);
+    static_cast<KVStore*>(handle)->Init(v_keys, v_vals, v_assigned_servers, is_barrier);
   else
-    static_cast<KVStore*>(handle)->Init(v_keys, v_vals);
+    static_cast<KVStore*>(handle)->Init(v_keys, v_vals, is_barrier);
   API_END();
 }
 
@@ -936,7 +938,9 @@ int MXKVStorePush(KVStoreHandle handle,
                   mx_uint num,
                   const int* keys,
                   NDArrayHandle* vals,
-                  int priority) {
+                  int priority,
+                  int is_barrier,
+                  int is_small_tensor) {
   API_BEGIN();
   std::vector<int> v_keys(num);
   std::vector<NDArray> v_vals(num);
@@ -944,7 +948,7 @@ int MXKVStorePush(KVStoreHandle handle,
     v_keys[i] = keys[i];
     v_vals[i] = *static_cast<NDArray*>(vals[i]);
   }
-  static_cast<KVStore*>(handle)->Push(v_keys, v_vals, priority);
+  static_cast<KVStore*>(handle)->Push(v_keys, v_vals, priority, is_barrier, is_small_tensor);
   API_END();
 }
 
@@ -952,7 +956,9 @@ int MXKVStorePushEx(KVStoreHandle handle,
                   mx_uint num,
                   const char** keys,
                   NDArrayHandle* vals,
-                  int priority) {
+                  int priority,
+                  int is_barrier,
+                  int is_small_tensor) {
   API_BEGIN();
   std::vector<std::string> v_keys(num);
   std::vector<NDArray> v_vals(num);
@@ -960,7 +966,7 @@ int MXKVStorePushEx(KVStoreHandle handle,
     v_keys[i] = keys[i];
     v_vals[i] = *static_cast<NDArray*>(vals[i]);
   }
-  static_cast<KVStore*>(handle)->Push(v_keys, v_vals, priority);
+  static_cast<KVStore*>(handle)->Push(v_keys, v_vals, priority, is_barrier, is_small_tensor);
   API_END();
 }
 

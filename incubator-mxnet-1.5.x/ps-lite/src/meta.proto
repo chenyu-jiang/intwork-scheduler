@@ -50,4 +50,10 @@ message PBMeta {
   optional bool push = 5;
   // whether or not it's for SimpleApp
   optional bool simple_app = 6 [default = false];
+  // priority
+  optional int32 priority = 11;
+  // whether or not it's a barrier tensor
+  optional bool is_barrier = 12 [default = false];
+  // whether or not it's a small tensor
+  optional bool is_small_tensor = 13 [default = false];
 }

@@ -49,7 +49,10 @@ class KVStoreTask(ByteTask):
             # worker 0 needs to init barrier tensor on PS
             self._barrier_key = str(self._partition_index + self.kwargs["key_index"]*1000 + 10**6)
             self._barrier_tensor = get_barrier_tensor(self._barrier_key)
-            self._comm.init(self._barrier_key, self._barrier_tensor)
+            if self.parent is None:
+                self._comm.init(self._barrier_key, self._barrier_tensor, server_assigned = self.kwargs["key_index"] % self._num_workers, is_barrier=True)
+            else:
+                self._comm.init(self._barrier_key, self._barrier_tensor, server_assigned = 0, is_barrier=True)
 
 
     def _post_communication(self, tensor):
@@ -59,14 +62,17 @@ class KVStoreTask(ByteTask):
         """
         if self.parent is None:
             if self.op == "init":
-                self._comm.init(self.name, tensor)
+                if isinstance(tensor, (tuple, list)):
+                    self._comm.init(self.name, tensor, server_assigned = [self.kwargs["key_index"] % self._num_workers]*len(tensor))
+                else:
+                    self._comm.init(self.name, tensor, server_assigned = self.kwargs["key_index"] % self._num_workers)
             elif self.op == "push":
-                self._comm.push(self.name, tensor, -self.priority)
+                self._comm.push(self.name, tensor, -self.priority, is_small_tensor=True)
             elif self.op == "pull":
                 self._comm.pull(self.name, out=tensor, priority=-self.priority - 1, ignore_sparse=self.kwargs["ignore_sparse"])
             elif self.op == "push_pull":
                 assert len(tensor) == 2
-                self._comm.push(self.name, tensor[0], -self.priority)
+                self._comm.push(self.name, tensor[0], -self.priority, is_small_tensor=True)
                 # add an op to notify push completion
                 self._push_completion_op_name = c_char_p(self.name.encode('ascii'))
 
@@ -242,8 +248,7 @@ class KVStoreTask(ByteTask):
     def _post_push_pull_barrier(self, avatar):
         if self.op == "push_pull":
             # push barrier and write dependency on barrier tensor and avatar with highest priority
-            self._comm.push(self._barrier_key, self._barrier_tensor, 100000000-self.priority)
-            self._comm.pull(self._barrier_key, out=self._barrier_tensor, priority = 100000000-self.priority)
+            self._comm.push(self._barrier_key, self._barrier_tensor, 100000000-self.priority, is_barrier=True)
             deps = [self._barrier_tensor.handle] + avatar
             barrier_tensors_out = (NDArrayHandle * len(deps))(*deps)
             check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_barrier(

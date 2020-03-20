@@ -25,7 +25,7 @@ import pickle
 from .ndarray import NDArray
 from .ndarray import _ndarray_cls
 from .base import _LIB, c_str_array, c_handle_array, c_array, c_array_buf, c_str
-from .base import check_call, string_types, mx_uint, py_str
+from .base import check_call, string_types, mx_int, mx_uint, py_str
 from .base import NDArrayHandle, KVStoreHandle
 from . import optimizer as opt
 from .profiler import set_kvstore_handle
@@ -143,7 +143,7 @@ class KVStore(object):
     def __del__(self):
         check_call(_LIB.MXKVStoreFree(self.handle))
 
-    def init(self, key, value, server_assigned = None):
+    def init(self, key, value, server_assigned = None, is_barrier = False):
         """ Initializes a single or a sequence of key-value pairs into the store.
 
         For each key, one must `init` it before calling `push` or `pull`.
@@ -183,11 +183,11 @@ class KVStore(object):
         """
         ckeys, cvals, cservers, use_str_keys = _ctype_key_value(key, value, server_assigned)
         if use_str_keys:
-            check_call(_LIB.MXKVStoreInitEx(self.handle, mx_uint(len(ckeys)), ckeys, cvals, cservers))
+            check_call(_LIB.MXKVStoreInitEx(self.handle, mx_uint(len(ckeys)), ckeys, cvals, cservers, mx_int(int(is_barrier))))
         else:
-            check_call(_LIB.MXKVStoreInit(self.handle, mx_uint(len(ckeys)), ckeys, cvals, cservers))
+            check_call(_LIB.MXKVStoreInit(self.handle, mx_uint(len(ckeys)), ckeys, cvals, cservers, mx_int(int(is_barrier))))
 
-    def push(self, key, value, priority=0):
+    def push(self, key, value, priority=0, is_barrier=False, is_small_tensor=False):
         """ Pushes a single or a sequence of key-value pairs into the store.
 
         This function returns immediately after adding an operator to the engine.
@@ -261,10 +261,10 @@ class KVStore(object):
         ckeys, cvals, _, use_str_keys = _ctype_key_value(key, value)
         if use_str_keys:
             check_call(_LIB.MXKVStorePushEx(
-                self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
+                self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority), mx_int(int(is_barrier)), mx_int(int(is_small_tensor))))
         else:
             check_call(_LIB.MXKVStorePush(
-                self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
+                self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority), mx_int(int(is_barrier)), mx_int(int(is_small_tensor))))
 
 
     def pull(self, key, out=None, priority=0, ignore_sparse=True):

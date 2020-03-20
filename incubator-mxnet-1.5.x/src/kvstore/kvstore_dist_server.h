@@ -34,13 +34,113 @@
 #include <memory>
 #include <functional>
 #include <future>
+#include <fstream>
 #include <vector>
+#include <chrono>
+#include <thread>
 #include "../profiler/profiler.h"
 #include "../operator/tensor/elemwise_binary_op-inl.h"
 #include "../operator/tensor/init_op.h"
 
 namespace mxnet {
 namespace kvstore {
+
+struct ScheduleBuf { 
+  std::vector<ps::KVMeta> request;
+  int32_t priority = 0;
+  bool terminate = false;
+};
+
+class ScheduledQueue {
+ public:
+  ScheduledQueue() { }
+  ~ScheduledQueue() { }
+
+  void Push(ScheduleBuf* new_value) {
+    mu_.lock();
+    queue_.push(new_value);
+    mu_.unlock();
+    cond_.notify_all();
+  }
+
+  void WaitAndPop(ScheduleBuf** value) {
+    std::unique_lock<std::mutex> lk(mu_);
+    cond_.wait(lk, [this]{return !queue_.empty();});
+    *value = queue_.top();
+    queue_.pop();
+  }
+
+ private:
+  class Compare {
+    public:
+        bool operator()(ScheduleBuf* l, ScheduleBuf* r) {
+            return l->priority <= r->priority;
+        }
+  };
+
+  mutable std::mutex mu_;
+  std::priority_queue<ScheduleBuf*, std::vector<ScheduleBuf*>, Compare> queue_;
+  std::condition_variable cond_;
+};
+
+class Scheduler {
+ public:
+  Scheduler(ps::KVServer<char>* server): server_(server) {}
+
+  void thread_func_() {
+    std::cout << "Background thread started." << std::endl;
+    while (true) {
+      ScheduleBuf* buf;
+      std::unique_lock<std::mutex> lk(mu_);
+      if (credit_ <= 0) {
+          cond_.wait(lk, [this](){return this->credit_ > 0;});
+      }
+      credit_ --;
+      lk.unlock();
+      queue_.WaitAndPop(&buf);
+      if (buf->terminate) break;
+      std::vector<ps::KVMeta> request_copy;
+      for(auto req: buf->request) {
+        request_copy.push_back(req);
+      }
+      buf->request.clear();
+      // std::cout << "Released barrier, current credit: " << std::to_string(credit_) << std::endl;
+      for(auto& req: request_copy) {
+        server_->Response(req);
+      }
+    }
+  }
+
+  void Start() {
+    std::thread t(&Scheduler::thread_func_, this);
+    t.detach();
+  }
+
+  /**
+   * \brief stop the thread, threadsafe
+   */
+  void Stop() {
+    // queue_.Push()
+  }
+
+  void Push(ScheduleBuf* buf) {
+    queue_.Push(buf);
+  }
+
+  void NotifyFinish() {
+    std::unique_lock<std::mutex> lk(mu_);
+    credit_ ++;
+    lk.unlock();
+    cond_.notify_all();
+  }
+
+ private:
+  ScheduledQueue queue_;
+  std::mutex mu_;
+  std::condition_variable cond_;
+  int credit_ = 4;
+  ps::KVServer<char>* server_;
+};
 
 // maintain same order in frontend.
 enum class CommandType {
@@ -154,9 +254,8 @@ class Executor {
 
 class KVStoreDistServer {
  public:
-  KVStoreDistServer() {
+  KVStoreDistServer(): ps_server_(new ps::KVServer<char>(0)),  scheduler_(ps_server_) {
     using namespace std::placeholders;
-    ps_server_ = new ps::KVServer<char>(0);
     static_cast<ps::SimpleApp*>(ps_server_)->set_request_handle(
         std::bind(&KVStoreDistServer::CommandHandle, this, _1, _2));
     ps_server_->set_request_handle(
@@ -185,16 +284,26 @@ class KVStoreDistServer {
    * \brief blocked until received the command \a kSyncMode
    */
   void Run() {
+    scheduler_.Start();
     exec_.Start();
   }
 
  private:
+  void LogServerTrace(std::string str) {
+    if (!logfile_.is_open()) {
+      int32_t rank = ps::MyRank();
+      logfile_.open("server_"+std::to_string(rank)+"_log.txt");
+    }
+    auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch());
+    logfile_ << now.count() << " : " << str << std::endl;
+  }
+
   struct UpdateBuf { 
     // Modification: instead of push, request now stores pull requests.
     std::vector<ps::KVMeta> request;
     std::vector<ps::SArray<ps::Key>> req_keys;
     int32_t push_count = 0;
-    bool update_finished = false;
+    bool update_finished = true;
     NDArray merged;
     // temp_array is used to cast received values as float32 for computation if required
     NDArray temp_array;
@@ -205,6 +314,7 @@ class KVStoreDistServer {
     switch (recved_type) {
       case CommandType::kStopServer:
         exec_.Stop();
+        scheduler_.Stop();
         break;
       case CommandType::kSyncMode:
         sync_mode_ = true;
@@ -381,6 +491,7 @@ class KVStoreDistServer {
         // TODO(mli) try to remove this CopyFrom
         response.vals.CopyFrom(static_cast<const char*>(stored.data().dptr_), len);
         for(int32_t req_id=0; req_id<num_pull_reqs; req_id++) {
+          LogServerTrace("pull, " + std::to_string(key));
           response.keys = update_buf->req_keys[req_id];
           server->Response(update_buf->request[req_id], response);
         }
@@ -610,6 +721,7 @@ class KVStoreDistServer {
     if(!sync_mode_ || updates.update_finished) {
       SendPullResponses(type, key, req_meta, req_data, server);
     } else {
+      LogServerTrace("spull, " + std::to_string(key));
       updates.request.push_back(req_meta);
       updates.req_keys.push_back(req_data.keys);
     }
@@ -622,6 +734,7 @@ class KVStoreDistServer {
                               ps::KVServer<char>* server) {
       ps::KVPairs<char> response;
       const NDArray& stored = store_[key];
+      LogServerTrace("dpull, " + std::to_string(key));
       CHECK(!stored.is_none()) << "init " << key << " first";
       // std::cout << "Sending pull of key " + std::to_string(key) << std::endl;
       // as server returns when store_realt is ready in this case
@@ -732,71 +845,101 @@ class KVStoreDistServer {
         stored = NDArray(dshape, Context(), false,
                          has_multi_precision_copy(type) ? mshadow::kFloat32 : type.dtype);
         CopyFromTo(recved, &stored, 0);
-        auto &updates = update_buf_[key];
-        updates.update_finished = true;
-        // server->Response(req_meta);
+        // auto &updates = update_buf_[key];
+        // updates.update_finished = true;
+        if(req_meta.is_barrier) {
+          ScheduleBuf buf;
+          buf.priority = req_meta.priority;
+          schedule_buf_[key] = std::move(buf);
+        }
+        server->Response(req_meta);
         if (has_multi_precision_copy(type)) {
           auto& stored_dtype = store_[key];
           stored_dtype = NDArray(dshape, Context(), false, type.dtype);
           CopyFromTo(stored, stored_dtype);
           stored_dtype.WaitToRead();
         }
-        int32_t num_pull_reqs = updates.request.size();
-        if (num_pull_reqs != 0) {
-          ps::KVPairs<char> response;
-          // std::cout << "Sending pull of key " + std::to_string(key) << std::endl;
-          // as server returns when store_realt is ready in this case
-          stored.WaitToRead();
-          auto len = stored.shape().Size() * mshadow::mshadow_sizeof(stored.dtype());
-          response.lens = {len};
-          // TODO(mli) try to remove this CopyFrom
-          response.vals.CopyFrom(static_cast<const char*>(stored.data().dptr_), len);
-          for(int32_t req_id=0; req_id<num_pull_reqs; req_id++) {
-            response.keys = updates.req_keys[req_id];
-            // std::cout << "response.keys size: " + std::to_string(response.keys.size()) << std::endl;
-            server->Response(updates.request[req_id], response);
-          }
-          updates.request.clear();
-          updates.req_keys.clear();
+        // int32_t num_pull_reqs = updates.request.size();
+        // if (num_pull_reqs != 0) {
+        //   ps::KVPairs<char> response;
+        //   // std::cout << "Sending pull of key " + std::to_string(key) << std::endl;
+        //   // as server returns when store_realt is ready in this case
+        //   stored.WaitToRead();
+        //   auto len = stored.shape().Size() * mshadow::mshadow_sizeof(stored.dtype());
+        //   response.lens = {len};
+        //   // TODO(mli) try to remove this CopyFrom
+        //   response.vals.CopyFrom(static_cast<const char*>(stored.data().dptr_), len);
+        //   for(int32_t req_id=0; req_id<num_pull_reqs; req_id++) {
+        //     response.keys = updates.req_keys[req_id];
+        //     // std::cout << "response.keys size: " + std::to_string(response.keys.size()) << std::endl;
+        //     server->Response(updates.request[req_id], response);
+        //   }
+        //   updates.request.clear();
+        //   updates.req_keys.clear();
+        // } else {
+        stored.WaitToRead();
+        if(req_meta.is_barrier) {
+          LogServerTrace("init, " + std::to_string(key) + ", barrier");
         } else {
-          stored.WaitToRead();
+          LogServerTrace("init, " + std::to_string(key));
         }
+        // }
       } else {
-        auto &updates = update_buf_[key];
-        if (sync_mode_ && updates.merged.is_none()) {
-          updates.merged = NDArray(dshape, Context(), false,
-                                   has_multi_precision_copy(type) ? mshadow::kFloat32 : type.dtype);
-        }
-        if (has_multi_precision_copy(type) && updates.temp_array.is_none()) {
-          updates.temp_array = NDArray(dshape, Context(), false, mshadow::kFloat32);
-        }
-        if (updates.push_count == 0) {
-        // if (updates.request.empty()) {
-          if (sync_mode_) {
-            updates.update_finished = false;
-            CopyFromTo(recved, updates.merged);
+        if (req_meta.is_barrier) {
+          ScheduleBuf* buf = &schedule_buf_[key];
+          buf->request.push_back(req_meta);
+          LogServerTrace("push, " + std::to_string(key) + ", barrier");
+          if (buf->request.size() == (size_t) ps::NumWorkers()) {
+            LogServerTrace("realeasing, " + std::to_string(key) + ", barrier");
+            scheduler_.Push(buf);
+          }
+        } else {
+          auto &updates = update_buf_[key];
+          if (sync_mode_ && updates.merged.is_none()) {
+            updates.merged = NDArray(dshape, Context(), false,
+                                    has_multi_precision_copy(type) ? mshadow::kFloat32 : type.dtype);
+          }
+          if (has_multi_precision_copy(type) && updates.temp_array.is_none()) {
+            updates.temp_array = NDArray(dshape, Context(), false, mshadow::kFloat32);
+          }
+          if (updates.push_count == 0) {
+          // if (updates.request.empty()) {
+            if (sync_mode_) {
+              updates.update_finished = false;
+              CopyFromTo(recved, updates.merged);
+            } else {
+              if (has_multi_precision_copy(type)) {
+                CopyFromTo(recved, updates.temp_array);
+              } else {
+                updates.temp_array = recved;
+              }
+            }
           } else {
+            CHECK(sync_mode_);
             if (has_multi_precision_copy(type)) {
               CopyFromTo(recved, updates.temp_array);
+              updates.merged += updates.temp_array;
             } else {
-              updates.temp_array = recved;
+              updates.merged += recved;
             }
           }
-        } else {
-          CHECK(sync_mode_);
-          if (has_multi_precision_copy(type)) {
-            CopyFromTo(recved, updates.temp_array);
-            updates.merged += updates.temp_array;
-          } else {
-            updates.merged += recved;
+          // Modification: send response here
+          // std::cout << "Push finished for key: " + std::to_string(key) + "." << std::endl;
+          LogServerTrace("push, " + std::to_string(key));
+          server->Response(req_meta);
+          updates.push_count ++;
+          // updates.request.push_back(req_meta);
+          if(req_meta.is_small_tensor || ps::MyRank() == 0) {
+            push_counter_ ++;
+            if(push_counter_ == (size_t)ps::NumWorkers()) {
+              LogServerTrace("notify_finish");
+              scheduler_.NotifyFinish();
+              push_counter_ = 0;
+              // LogServerTrace("notify_finish returned");
+            }
           }
+          ApplyUpdates(type, key, &updates, server);
         }
-        // Modification: send response here
-        // std::cout << "Push finished for key: " + std::to_string(key) + "." << std::endl;
-        // server->Response(req_meta);
-        updates.push_count ++;
-        // updates.request.push_back(req_meta);
-        ApplyUpdates(type, key, &updates, server);
       }
     } else {
       DefaultStorageResponse(type, key, req_meta, req_data, server);
@@ -829,6 +972,8 @@ class KVStoreDistServer {
    */
   std::unordered_map<int, UpdateBuf> update_buf_;
 
+  std::unordered_map<int, ScheduleBuf> schedule_buf_;
+
   /**
    * \brief decomp_buf_ is a buffer into which compressed values are
    * decompressed before merging to the store. used when compress_!='none'
@@ -837,6 +982,8 @@ class KVStoreDistServer {
 
   Executor exec_;
   ps::KVServer<char>* ps_server_;
+
+  Scheduler scheduler_;
 
   // whether to LOG verbose information
   bool log_verbose_;
@@ -854,6 +1001,10 @@ class KVStoreDistServer {
    * currently there is no support for unsetting gradient compression
    */
   std::shared_ptr<kvstore::GradientCompression> gradient_compression_;
+
+  std::ofstream logfile_;
+
+  int push_counter_ = 0;
 };
 
 }  // namespace kvstore

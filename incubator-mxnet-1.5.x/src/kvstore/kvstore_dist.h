@@ -186,13 +186,14 @@ class KVStoreDist : public KVStoreLocal {
   std::mutex mu_;
 
   void InitImpl(const std::vector<int>& keys,
-                const std::vector<NDArray>& values) override {
+                const std::vector<NDArray>& values,
+                const int is_barrier) override {
     CheckUnique(keys);
     for (size_t i = 0; i < keys.size(); ++i) {
       comm_->Init(keys[i], values[i].storage_type(), values[i].shape(), values[i].dtype());
     }
     if (get_rank() == 0 && this->ps_worker_->get_customer()->customer_id() == 0) {
-      Push_(keys, values, 1000000, false);
+      Push_(keys, values, 1000000, false, is_barrier, 0);
       // wait until the push is finished
       for (const int key : keys) {
         comm_buf_[key].WaitToWrite();
@@ -208,8 +209,8 @@ class KVStoreDist : public KVStoreLocal {
 
   void PushImpl(const std::vector<int>& keys,
                 const std::vector<NDArray>& values,
-                int priority) override {
-    Push_(keys, values, priority, true);
+                int priority, const int is_barrier, const int is_small_tensor) override {
+    Push_(keys, values, priority, true, is_barrier, is_small_tensor);
   }
 
   void PullImpl(const std::vector<int>& keys,
@@ -309,7 +310,8 @@ class KVStoreDist : public KVStoreLocal {
   void Push_(const std::vector<int>& keys,
              const std::vector<NDArray>& values,
              int priority,
-             bool do_merge) {
+             bool do_merge,
+             const int is_barrier, const int is_small_tensor) {
     // first aggregate the values over keys
     std::vector<int> uniq_keys;
     std::vector<std::vector<NDArray> > grouped_vals;
@@ -345,7 +347,7 @@ class KVStoreDist : public KVStoreLocal {
       if (storage_type == kDefaultStorage) {
         if (gradient_compression_->get_type() == CompressionType::kNone) {
           PSKV& pskv = EncodeDefaultKey(key, comm_buf.shape().Size(), num_bytes);
-          PushDefault(key, comm_buf, pskv, priority);
+          PushDefault(key, comm_buf, pskv, priority, is_barrier, is_small_tensor);
         } else {
           CHECK_EQ(dtype, mshadow::kFloat32) << "Gradient compression is only supported for "
                                              << "float32 type of parameters";
@@ -360,7 +362,7 @@ class KVStoreDist : public KVStoreLocal {
           if (is_active) {
             PushCompressed(key, comm_buf, pskv, priority);
           } else {
-            PushDefault(key, comm_buf, pskv, priority);
+            PushDefault(key, comm_buf, pskv, priority, is_barrier, is_small_tensor);
           }
         }
       } else if (storage_type == kRowSparseStorage) {
@@ -408,9 +410,9 @@ class KVStoreDist : public KVStoreLocal {
       "KVStoreDistCompressedPush");
   }
 
-  void PushDefault(int key, const NDArray &send_buf, const PSKV& pskv, int priority) {
+  void PushDefault(int key, const NDArray &send_buf, const PSKV& pskv, int priority, const int is_barrier, const int is_small_tensor) {
     auto push_to_servers =
-        [this, key, pskv, send_buf](RunContext rctx, Engine::CallbackOnComplete cb) {
+        [this, key, pskv, send_buf, is_barrier, priority, is_small_tensor](RunContext rctx, Engine::CallbackOnComplete cb) {
           const int dtype = send_buf.dtype();
           // convert to ps keys
           const size_t size = send_buf.shape().Size() * mshadow::mshadow_sizeof(dtype);
@@ -420,7 +422,7 @@ class KVStoreDist : public KVStoreLocal {
           int cmd = GetCommandType(RequestType::kDefaultPushPull, dtype);
           CHECK_NOTNULL(ps_worker_)->ZPush(
               pskv.keys, vals, pskv.lens,
-              cmd, [cb]() { cb(); });
+              cmd, [cb]() { cb(); }, priority, is_barrier, is_small_tensor);
         };
     Engine::Get()->PushAsync(
         push_to_servers,

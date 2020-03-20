@@ -99,7 +99,8 @@ class KVStoreLocal : public KVStore {
 
   void Init(const std::vector<int>& keys,
             const std::vector<NDArray>& values,
-            const std::vector<int>& assigned_servers) override {
+            const std::vector<int>& assigned_servers,
+            const int is_barrier) override {
     SetKeyType(kIntKey);
     for (size_t i = 0; i < keys.size(); ++i) {
       auto &key = keys[i];
@@ -108,22 +109,24 @@ class KVStoreLocal : public KVStore {
             << "duplicate init of server assignment of key " << key;
       server_assignment_dict_[key] = assigned_servers[i];
     }
-    InitImpl(keys, values);
+    InitImpl(keys, values, is_barrier);
   }
 
   void Init(const std::vector<int>& keys,
-            const std::vector<NDArray>& values) override {
+            const std::vector<NDArray>& values,
+            const int is_barrier) override {
     SetKeyType(kIntKey);
     for (size_t i = 0; i < keys.size(); ++i) {
       auto &key = keys[i];
       SetServerAssignmentType(key, kRandomAssignment);
     }
-    InitImpl(keys, values);
+    InitImpl(keys, values, is_barrier);
   }
 
   void Init(const std::vector<std::string>& str_keys,
             const std::vector<NDArray>& values,
-            const std::vector<int>& assigned_servers) override {
+            const std::vector<int>& assigned_servers,
+            const int is_barrier) override {
     SetKeyType(kStringKey);
     std::vector<int> keys(str_keys.size());
     for (size_t i = 0; i < str_keys.size(); ++i) {
@@ -145,11 +148,12 @@ class KVStoreLocal : public KVStore {
       server_assignment_dict_[key] = assigned_servers[i];
       // std::cout << "Assigned key " + std::to_string(key) + " to server " + std::to_string(assigned_servers[i]) << std::endl; 
     }
-    InitImpl(keys, values);
+    InitImpl(keys, values, is_barrier);
   }
 
   void Init(const std::vector<std::string>& str_keys,
-            const std::vector<NDArray>& values) override {
+            const std::vector<NDArray>& values,
+            const int is_barrier) override {
     SetKeyType(kStringKey);
     std::vector<int> keys(str_keys.size());
     for (size_t i = 0; i < str_keys.size(); ++i) {
@@ -166,14 +170,16 @@ class KVStoreLocal : public KVStore {
       // check assignment type
       SetServerAssignmentType(key, kRandomAssignment);
     }
-    InitImpl(keys, values);
+    InitImpl(keys, values, is_barrier);
   }
 
   void Push(const std::vector<int>& keys,
             const std::vector<NDArray>& values,
-            int priority) override {
+            int priority,
+            const int is_barrier,
+            const int is_small_tensor) override {
     SetKeyType(kIntKey);
-    PushImpl(keys, values, priority);
+    PushImpl(keys, values, priority, is_barrier, is_small_tensor);
   }
 
   void Pull(const std::vector<int>& keys,
@@ -193,11 +199,13 @@ class KVStoreLocal : public KVStore {
 
   void Push(const std::vector<std::string>& str_keys,
             const std::vector<NDArray>& values,
-            int priority) override {
+            int priority,
+            const int is_barrier,
+            const int is_small_tensor) override {
     SetKeyType(kStringKey);
     std::vector<int> keys(str_keys.size());
     LookupKeys(str_keys, &keys);
-    PushImpl(keys, values, priority);
+    PushImpl(keys, values, priority, is_barrier, is_small_tensor);
   }
 
   void Pull(const std::vector<std::string>& str_keys,
@@ -226,7 +234,8 @@ class KVStoreLocal : public KVStore {
 
  private:
   virtual void InitImpl(const std::vector<int>& keys,
-                        const std::vector<NDArray>& values) {
+                        const std::vector<NDArray>& values,
+                        const int is_barrier) {
     for (size_t i = 0; i < keys.size(); ++i) {
       CHECK(local_.find(keys[i]) == local_.end())
           << "duplicate init of key " << keys[i];
@@ -238,7 +247,7 @@ class KVStoreLocal : public KVStore {
 
   virtual void PushImpl(const std::vector<int>& keys,
                         const std::vector<NDArray>& values,
-                        int priority) {
+                        int priority, const int is_barrier, const int is_small_tensor) {
     std::vector<int> uniq_keys;
     std::vector<std::vector<NDArray> > grouped_vals;
     GroupKVPairsPush(keys, values, &uniq_keys, &grouped_vals, false);

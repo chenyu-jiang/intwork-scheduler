@@ -32,7 +32,7 @@ shift
 arg="$@"
 
 # start the scheduler
-export DMLC_PS_ROOT_URI='127.0.0.1'
+export DMLC_PS_ROOT_URI='137.189.88.84'
 export DMLC_PS_ROOT_PORT=8000
 
 if [ ${RANK} -eq 0 ]
@@ -52,6 +52,5 @@ ${bin} ${arg} &
 export DMLC_ROLE='worker'
 export HEAPPROFILE=./W${RANK}
 ${bin} ${arg} &
-done
 
 wait

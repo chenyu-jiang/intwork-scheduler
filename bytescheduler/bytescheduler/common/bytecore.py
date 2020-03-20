@@ -125,6 +125,8 @@ class ByteCore(object):
         self._scheduler.start()
         self._is_started = True
 
+        # self.logfile = open("bytescheduler_{}_log.txt".format(self._rank), "w")
+
         self._logger.info(
             "start Core {}: credit {}, partition {}.".format(
                 self._rank, self._credit, self._partition))
@@ -179,7 +181,7 @@ class ByteCore(object):
             if task.tensor_size() > self._partition:
                 subtasks = task.partition(size=self._partition)
             else:
-                task.priority = task.priority*10
+                task.priority = task.priority * task.max_partition
                 subtasks = [task]
             
             # print("Tensor {} have {} partitions.".format(task.name, len(subtasks)))
@@ -193,12 +195,18 @@ class ByteCore(object):
                             raise RuntimeError("{} not in _running".format(t.desc))
                         self._running.remove(t)
                         self._finished[t.name] = t
+                        # self.logfile.write("ended: {}, {}, {}\n".format(t.name, t.op, t.priority))
+                        # self.logfile.flush()
+                        # os.fsync(self.logfile)
                     self._profiler.put(t.name, t.op + 'COMMUNICATION', 'E')
 
                 for t in subtasks:
                     with self._condition:
                         self._running.add(t)
                     self._profiler.put(t.name, t.op + 'COMMUNICATION', 'B')
+                    # self.logfile.write("started: {}, {}, {}\n".format(t.name, t.op, t.priority))
+                    # self.logfile.flush()
+                    # os.fsync(self.logfile)
                     t.immediate_do(callback=_end_callback, callback_context=self)
                 return True
 
@@ -211,6 +219,9 @@ class ByteCore(object):
                     # print("Putting {} in queue.".format(task.desc))
                     self._queue.put((task.priority, self._commands['DATA'], task))
                     self._condition.notify_all()
+                    # self.logfile.write("ready: {}, {}, {}\n".format(t.name, t.op, t.priority))
+                    # self.logfile.flush()
+                    # os.fsync(self.logfile)
 
             # Prepare the task, i.e., add dependency Proxies.
             for t in subtasks:
@@ -227,10 +238,13 @@ class ByteCore(object):
         # The callback runs when a non-immediate task is finished.
         def _end_callback(task, self):
             with self._condition:
-                self._credit += task.tensor_size()
-                if self._credit > self._credit_limit:
-                    self._credit = self._credit_limit
+                # self._credit += task.tensor_size()
+                # if self._credit > self._credit_limit:
+                    # self._credit = self._credit_limit
                 self._running.remove(task)
+                # self.logfile.write("ended: {}, {}, {}\n".format(task.name, task.op, task.priority))
+                # self.logfile.flush()
+                # os.fsync(self.logfile)
                 self._condition.notify_all()
             self._finished[task.name] = task
             self._profiler.put(task.name, task.op + 'COMMUNICATION', 'E')
@@ -257,8 +271,11 @@ class ByteCore(object):
                 self._profiler.put(task.name, task.op + 'QUEUE', 'E')
                 with self._condition:
                     self._running.add(task)
-                    self._credit -= task.tensor_size()
+                    # self._credit -= task.tensor_size()
                 # print("Starting {} with size {}.".format(task.desc, task.tensor_size()))
+                # self.logfile.write("started: {}, {}, {}\n".format(task.name, task.op, task.priority))
+                # self.logfile.flush()
+                # os.fsync(self.logfile)
                 task.do(callback=_end_callback, callback_context=self)
                 self._profiler.put(task.name, task.op + 'COMMUNICATION', 'B')
 

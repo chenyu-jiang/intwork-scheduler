@@ -104,10 +104,12 @@ class KVStore {
    */
   virtual void Init(const std::vector<int>& keys,
                     const std::vector<NDArray>& values,
-                    const std::vector<int>& assigned_servers) = 0;
+                    const std::vector<int>& assigned_servers,
+                    const int is_barrier) = 0;
 
   virtual void Init(const std::vector<int>& keys,
-                    const std::vector<NDArray>& values) = 0;
+                    const std::vector<NDArray>& values,
+                    const int is_barrier) = 0;
   /*!
    * \brief Initialize a list of key-value pair to the store.
    * \param keys a list of unique keys in string format
@@ -115,10 +117,12 @@ class KVStore {
    */
   virtual void Init(const std::vector<std::string>& str_keys,
                     const std::vector<NDArray>& values,
-                    const std::vector<int>& assigned_servers) = 0;
+                    const std::vector<int>& assigned_servers,
+                    const int is_barrier) = 0;
 
   virtual void Init(const std::vector<std::string>& str_keys,
-                    const std::vector<NDArray>& values) = 0;
+                    const std::vector<NDArray>& values,
+                    const int is_barrier) = 0;
   /*!
    * \brief push a list of key-value pairs into the store
    *
@@ -157,7 +161,9 @@ class KVStore {
    */
   virtual void Push(const std::vector<int>& keys,
                     const std::vector<NDArray>& values,
-                    int priority = 0)  = 0;
+                    int priority = 0,
+                    const int is_barrier = 0,
+                    const int is_small_tensor = 0)  = 0;
 
   /*!
    * \brief push a list of key-value pairs into the store
@@ -167,7 +173,9 @@ class KVStore {
    */
   virtual void Push(const std::vector<std::string>& str_keys,
                     const std::vector<NDArray>& values,
-                    int priority = 0)  = 0;
+                    int priority = 0,
+                    const int is_barrier = 0,
+                    const int is_small_tensor = 0)  = 0;
   /*!
    * \brief pull a list of key-value pairs from the store
    *

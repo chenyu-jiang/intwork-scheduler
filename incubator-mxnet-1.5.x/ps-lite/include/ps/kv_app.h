@@ -177,14 +177,14 @@ class KVWorker : public SimpleApp {
             const SArray<Val>& vals,
             const SArray<int>& lens = {},
             int cmd = 0,
-            const Callback& cb = nullptr, int priority = -100000000) {
+            const Callback& cb = nullptr, int priority = -100000000, const int is_barrier = 0, const int is_small_tensor = 0) {
     int ts = obj_->NewRequest(kServerGroup);
     AddCallback(ts, cb);
     KVPairs<Val> kvs;
     kvs.keys = keys;
     kvs.vals = vals;
     kvs.lens = lens;
-    Send(ts, true, cmd, kvs, priority);
+    Send(ts, true, cmd, kvs, priority, is_barrier, is_small_tensor);
     return ts;
   }
 
@@ -251,7 +251,7 @@ class KVWorker : public SimpleApp {
    * @param push whether or not it is a push request
    * @param cmd command
    */
-  void Send(int timestamp, bool push, int cmd, const KVPairs<Val>& kvs, int priority);
+  void Send(int timestamp, bool push, int cmd, const KVPairs<Val>& kvs, int priority, const int is_barrier=0, const int is_small_tensor=0);
   /** \brief internal receive handle */
   void Process(const Message& msg);
   /** \brief default kv slicer */
@@ -281,6 +281,9 @@ struct KVMeta {
   int timestamp;
   /** \brief the customer id of worker */
   int customer_id;
+  bool is_barrier;
+  int priority;
+  bool is_small_tensor;
 };
 
 /**
@@ -371,6 +374,9 @@ void KVServer<Val>::Process(const Message& msg) {
   meta.sender    = msg.meta.sender;
   meta.timestamp = msg.meta.timestamp;
   meta.customer_id = msg.meta.customer_id;
+  meta.is_barrier = msg.meta.is_barrier;
+  meta.is_small_tensor = msg.meta.is_small_tensor;
+  meta.priority = msg.meta.priority;
   KVPairs<Val> data;
   int n = msg.data.size();
   if (n) {
@@ -465,7 +471,7 @@ void KVWorker<Val>::DefaultSlicer(
 }
 
 template <typename Val>
-void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& kvs, int priority) {
+void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& kvs, int priority, int is_barrier, int is_small_tensor) {
   // printf("[KVWorker] Send: priority: %d\n", priority);
   // slice the message
   SlicedKVs sliced;
@@ -494,6 +500,8 @@ void KVWorker<Val>::Send(int timestamp, bool push, int cmd, const KVPairs<Val>& 
     msg.meta.timestamp   = timestamp;
     msg.meta.recver      = Postoffice::Get()->ServerRankToID(i);
     msg.meta.priority = priority;
+    msg.meta.is_barrier = bool(is_barrier);
+    msg.meta.is_small_tensor = bool(is_small_tensor);
     const auto& kvs = s.second;
     if (kvs.keys.size()) {
       msg.AddData(kvs.keys);

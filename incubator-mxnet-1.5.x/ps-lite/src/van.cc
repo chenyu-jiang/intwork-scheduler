@@ -432,6 +432,9 @@ void Van::PackMeta(const Meta& meta, char** meta_buf, int* buf_size) {
   pb.set_request(meta.request);
   pb.set_simple_app(meta.simple_app);
   pb.set_customer_id(meta.customer_id);
+  pb.set_priority(meta.priority);
+  pb.set_is_barrier(meta.is_barrier);
+  pb.set_is_small_tensor(meta.is_small_tensor);
   for (auto d : meta.data_type) pb.add_data_type(d);
   if (!meta.control.empty()) {
     auto ctrl = pb.mutable_control();
@@ -475,6 +478,9 @@ void Van::UnpackMeta(const char* meta_buf, int buf_size, Meta* meta) {
   meta->body = pb.body();
   meta->customer_id = pb.customer_id();
   meta->data_type.resize(pb.data_type_size());
+  meta->priority = pb.priority();
+  meta->is_barrier = pb.is_barrier();
+  meta->is_small_tensor = pb.is_small_tensor();
   for (int i = 0; i < pb.data_type_size(); ++i) {
     meta->data_type[i] = static_cast<DataType>(pb.data_type(i));
   }

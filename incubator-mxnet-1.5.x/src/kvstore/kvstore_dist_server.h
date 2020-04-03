@@ -491,7 +491,7 @@ class KVStoreDistServer {
         // TODO(mli) try to remove this CopyFrom
         response.vals.CopyFrom(static_cast<const char*>(stored.data().dptr_), len);
         for(int32_t req_id=0; req_id<num_pull_reqs; req_id++) {
-          LogServerTrace("pull, " + std::to_string(key));
+          // LogServerTrace("pull, " + std::to_string(key));
           response.keys = update_buf->req_keys[req_id];
           server->Response(update_buf->request[req_id], response);
         }
@@ -721,7 +721,7 @@ class KVStoreDistServer {
     if(!sync_mode_ || updates.update_finished) {
       SendPullResponses(type, key, req_meta, req_data, server);
     } else {
-      LogServerTrace("spull, " + std::to_string(key));
+      // LogServerTrace("spull, " + std::to_string(key));
       updates.request.push_back(req_meta);
       updates.req_keys.push_back(req_data.keys);
     }
@@ -734,7 +734,7 @@ class KVStoreDistServer {
                               ps::KVServer<char>* server) {
       ps::KVPairs<char> response;
       const NDArray& stored = store_[key];
-      LogServerTrace("dpull, " + std::to_string(key));
+      // LogServerTrace("dpull, " + std::to_string(key));
       CHECK(!stored.is_none()) << "init " << key << " first";
       // std::cout << "Sending pull of key " + std::to_string(key) << std::endl;
       // as server returns when store_realt is ready in this case
@@ -878,19 +878,19 @@ class KVStoreDistServer {
         //   updates.req_keys.clear();
         // } else {
         stored.WaitToRead();
-        if(req_meta.is_barrier) {
-          LogServerTrace("init, " + std::to_string(key) + ", barrier");
-        } else {
-          LogServerTrace("init, " + std::to_string(key));
-        }
+        // if(req_meta.is_barrier) {
+        //   LogServerTrace("init, " + std::to_string(key) + ", barrier");
+        // } else {
+        //   LogServerTrace("init, " + std::to_string(key));
+        // }
         // }
       } else {
         if (req_meta.is_barrier) {
           ScheduleBuf* buf = &schedule_buf_[key];
           buf->request.push_back(req_meta);
-          LogServerTrace("push, " + std::to_string(key) + ", barrier");
+          // LogServerTrace("push, " + std::to_string(key) + ", barrier");
           if (buf->request.size() == (size_t) ps::NumWorkers()) {
-            LogServerTrace("realeasing, " + std::to_string(key) + ", barrier");
+            // LogServerTrace("realeasing, " + std::to_string(key) + ", barrier");
             scheduler_.Push(buf);
           }
         } else {
@@ -932,7 +932,7 @@ class KVStoreDistServer {
           if(req_meta.is_small_tensor || ps::MyRank() == 0) {
             push_counter_ ++;
             if(push_counter_ == (size_t)ps::NumWorkers()) {
-              LogServerTrace("notify_finish");
+              // LogServerTrace("notify_finish");
               scheduler_.NotifyFinish();
               push_counter_ = 0;
               // LogServerTrace("notify_finish returned");

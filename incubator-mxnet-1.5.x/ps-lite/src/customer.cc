@@ -68,7 +68,7 @@ void Customer::Receiving() {
         recv.meta.control.cmd == Control::TERMINATE) {
       break;
     }
-    Log(recv.recvd_time, "duration");
+    if(Postoffice::Get()->is_server() && recv.meta.push && recv.meta.request) Log(recv.recvd_time, "duration");
     recv_handle_(recv);
     if (!recv.meta.request) {
       std::lock_guard<std::mutex> lk(tracker_mu_);

@@ -32,7 +32,7 @@ shift
 arg="$@"
 
 # start the scheduler
-export DMLC_PS_ROOT_URI='137.189.88.84'
+export DMLC_PS_ROOT_URI='137.189.88.83'
 export DMLC_PS_ROOT_PORT=8000
 
 if [ ${RANK} -eq 0 ]

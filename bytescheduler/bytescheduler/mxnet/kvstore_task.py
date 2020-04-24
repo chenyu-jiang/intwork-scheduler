@@ -153,6 +153,8 @@ class KVStoreTask(ByteTask):
                         check_call(BYTESCHEDULER_LIB.bytescheduler_mxnet_op(
                             push_tensors_out, 0, push_tensors_out, len(push_avatar), self._push_completion_callback, 100000000-self.priority))
                     else:
+                        # self._comm.push(self._barrier_key, self._barrier_tensor, 100000000-self.priority, is_barrier=False)
+                        # self._comm.pull(self._barrier_key, out = self._barrier_tensor, priority=100000000-self.priority, ignore_sparse=self.kwargs["ignore_sparse"])
                         # add dependency between push ops
                         next_push_avatar = [t.handle for t in tensor[step_id+1][0]] if isinstance(tensor[step_id+1][0], (tuple, list)) else [tensor[step_id+1][0].handle]
                         next_push_avatar_out = (NDArrayHandle * len(next_push_avatar))(*next_push_avatar)
